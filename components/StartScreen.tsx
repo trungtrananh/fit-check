@@ -10,12 +10,14 @@ import { Compare } from './ui/compare';
 import { generateModelImage } from '../services/geminiService';
 import Spinner from './Spinner';
 import { getFriendlyErrorMessage } from '../lib/utils';
+import { getCredits, deductCredits, CREDIT_COSTS } from '../services/creditService';
 
 interface StartScreenProps {
   onModelFinalized: (modelUrl: string) => void;
+  onCreditsUpdate: () => void;
 }
 
-const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized }) => {
+const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized, onCreditsUpdate }) => {
   const [userImageUrl, setUserImageUrl] = useState<string | null>(null);
   const [generatedModelUrl, setGeneratedModelUrl] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -27,6 +29,14 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized }) => {
         return;
     }
 
+    // Check credits
+    const credits = getCredits();
+    const cost = CREDIT_COSTS.MODEL_GENERATION;
+    if (credits.balance < cost) {
+        setError(`Not enough credits! You need ${cost} credits to generate a model. Please buy more credits.`);
+        return;
+    }
+
     const reader = new FileReader();
     reader.onload = async (e) => {
         const dataUrl = e.target?.result as string;
@@ -35,8 +45,15 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized }) => {
         setGeneratedModelUrl(null);
         setError(null);
         try {
+            // Deduct credits
+            const success = await deductCredits(cost, 'MODEL_GENERATION');
+            if (!success) {
+                throw new Error('Failed to process credits');
+            }
+
             const result = await generateModelImage(file);
             setGeneratedModelUrl(result);
+            onCreditsUpdate();
         } catch (err) {
             setError(getFriendlyErrorMessage(err, 'Failed to create model'));
             setUserImageUrl(null);
@@ -45,7 +62,7 @@ const StartScreen: React.FC<StartScreenProps> = ({ onModelFinalized }) => {
         }
     };
     reader.readAsDataURL(file);
-  }, []);
+  }, [onCreditsUpdate]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {

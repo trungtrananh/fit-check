@@ -10,13 +10,15 @@ import Canvas from './components/Canvas';
 import WardrobePanel from './components/WardrobeModal';
 import OutfitStack from './components/OutfitStack';
 import { generateVirtualTryOnImage, generatePoseVariation } from './services/geminiService';
-import { OutfitLayer, WardrobeItem } from './types';
+import { OutfitLayer, WardrobeItem, CREDIT_COSTS } from './types';
 import { ChevronDownIcon, ChevronUpIcon } from './components/icons';
 import { defaultWardrobe } from './wardrobe';
 import Footer from './components/Footer';
 import { getFriendlyErrorMessage } from './lib/utils';
 import Spinner from './components/Spinner';
-import LoginScreen from './components/LoginScreen';
+import CreditsDisplay from './components/CreditsDisplay';
+import BuyCreditsModal from './components/BuyCreditsModal';
+import { getCredits, deductCredits, syncCredits } from './services/creditService';
 
 const POSE_INSTRUCTIONS = [
   "Full frontal view, hands on hips",
@@ -53,7 +55,6 @@ const useMediaQuery = (query: string): boolean => {
 
 
 const App: React.FC = () => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [modelImageUrl, setModelImageUrl] = useState<string | null>(null);
   const [outfitHistory, setOutfitHistory] = useState<OutfitLayer[]>([]);
   const [currentOutfitIndex, setCurrentOutfitIndex] = useState(0);
@@ -63,13 +64,13 @@ const App: React.FC = () => {
   const [currentPoseIndex, setCurrentPoseIndex] = useState(0);
   const [isSheetCollapsed, setIsSheetCollapsed] = useState(false);
   const [wardrobe, setWardrobe] = useState<WardrobeItem[]>(defaultWardrobe);
+  const [credits, setCredits] = useState(() => getCredits());
+  const [showBuyCreditsModal, setShowBuyCreditsModal] = useState(false);
   const isMobile = useMediaQuery('(max-width: 767px)');
 
   useEffect(() => {
-    // On initial load, check if the user is already "logged in" from a previous session.
-    if (localStorage.getItem('isAuthenticated') === 'true') {
-        setIsAuthenticated(true);
-    }
+    // Sync credits on mount
+    syncCredits().then(setCredits);
   }, []);
 
   const activeOutfitLayers = useMemo(() => 
@@ -120,18 +121,6 @@ const App: React.FC = () => {
     setWardrobe(defaultWardrobe);
   };
 
-  const handleLogin = () => {
-    localStorage.setItem('isAuthenticated', 'true');
-    setIsAuthenticated(true);
-  };
-
-  const handleLogout = () => {
-      localStorage.removeItem('isAuthenticated');
-      setIsAuthenticated(false);
-      // Reset all other app state by calling start over
-      handleStartOver();
-  };
-
   const handleGarmentSelect = useCallback(async (garmentFile: File, garmentInfo: WardrobeItem) => {
     if (!displayImageUrl || isLoading) return;
 
@@ -143,11 +132,25 @@ const App: React.FC = () => {
         return;
     }
 
+    // Check credits
+    const cost = CREDIT_COSTS.VIRTUAL_TRYON;
+    if (credits.balance < cost) {
+      setError(`Not enough credits! You need ${cost} credits for virtual try-on.`);
+      setShowBuyCreditsModal(true);
+      return;
+    }
+
     setError(null);
     setIsLoading(true);
     setLoadingMessage(`Adding ${garmentInfo.name}...`);
 
     try {
+      // Deduct credits
+      const success = await deductCredits(cost, 'VIRTUAL_TRYON');
+      if (!success) {
+        throw new Error('Failed to process credits');
+      }
+
       const newImageUrl = await generateVirtualTryOnImage(displayImageUrl, garmentFile);
       const currentPoseInstruction = POSE_INSTRUCTIONS[currentPoseIndex];
       
@@ -163,6 +166,9 @@ const App: React.FC = () => {
       });
       setCurrentOutfitIndex(prev => prev + 1);
       
+      // Update credits state
+      setCredits(getCredits());
+      
       // Add to personal wardrobe if it's not already there
       setWardrobe(prev => {
         if (prev.find(item => item.id === garmentInfo.id)) {
@@ -171,14 +177,12 @@ const App: React.FC = () => {
         return [...prev, garmentInfo];
       });
     } catch (err) {
-      // FIX: The error indicates `getFriendlyErrorMessage` expects a string.
-      // We convert `err` to a string representation before passing it.
       setError(getFriendlyErrorMessage(String(err), 'Failed to apply garment'));
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
     }
-  }, [displayImageUrl, isLoading, currentPoseIndex, outfitHistory, currentOutfitIndex]);
+  }, [displayImageUrl, isLoading, currentPoseIndex, outfitHistory, currentOutfitIndex, credits]);
 
   const handleRemoveLastGarment = () => {
     if (currentOutfitIndex > 0) {
@@ -199,6 +203,14 @@ const App: React.FC = () => {
       return;
     }
 
+    // Check credits for new pose generation
+    const cost = CREDIT_COSTS.POSE_VARIATION;
+    if (credits.balance < cost) {
+      setError(`Not enough credits! You need ${cost} credit for pose variation.`);
+      setShowBuyCreditsModal(true);
+      return;
+    }
+
     // Pose doesn't exist, so generate it.
     // Use an existing image from the current layer as the base.
     const baseImageForPoseChange = Object.values(currentLayer.poseImages)[0];
@@ -213,6 +225,12 @@ const App: React.FC = () => {
     setCurrentPoseIndex(newIndex);
 
     try {
+      // Deduct credits
+      const success = await deductCredits(cost, 'POSE_VARIATION');
+      if (!success) {
+        throw new Error('Failed to process credits');
+      }
+
       const newImageUrl = await generatePoseVariation(baseImageForPoseChange, poseInstruction);
       setOutfitHistory(prevHistory => {
         const newHistory = [...prevHistory];
@@ -220,9 +238,10 @@ const App: React.FC = () => {
         updatedLayer.poseImages[poseInstruction] = newImageUrl;
         return newHistory;
       });
+      
+      // Update credits state
+      setCredits(getCredits());
     } catch (err) {
-      // FIX: The error indicates `getFriendlyErrorMessage` expects a string.
-      // We convert `err` to a string representation before passing it.
       setError(getFriendlyErrorMessage(String(err), 'Failed to change pose'));
       // Revert pose index on failure
       setCurrentPoseIndex(prevPoseIndex);
@@ -230,7 +249,7 @@ const App: React.FC = () => {
       setIsLoading(false);
       setLoadingMessage('');
     }
-  }, [currentPoseIndex, outfitHistory, isLoading, currentOutfitIndex]);
+  }, [currentPoseIndex, outfitHistory, isLoading, currentOutfitIndex, credits]);
 
   const viewVariants = {
     initial: { opacity: 0, y: 15 },
@@ -241,18 +260,7 @@ const App: React.FC = () => {
   return (
     <div className="font-sans">
       <AnimatePresence mode="wait">
-        {!isAuthenticated ? (
-          <motion.div
-            key="login-screen"
-            variants={viewVariants}
-            initial="initial"
-            animate="animate"
-            exit="exit"
-            transition={{ duration: 0.5, ease: 'easeInOut' }}
-          >
-            <LoginScreen onLogin={handleLogin} />
-          </motion.div>
-        ) : !modelImageUrl ? (
+        {!modelImageUrl ? (
           <motion.div
             key="start-screen"
             className="w-screen min-h-screen flex items-start sm:items-center justify-center bg-gray-50 p-4 pb-20"
@@ -262,7 +270,14 @@ const App: React.FC = () => {
             exit="exit"
             transition={{ duration: 0.5, ease: 'easeInOut' }}
           >
-            <StartScreen onModelFinalized={handleModelFinalized} />
+            {/* Credits Display on Start Screen */}
+            <div className="absolute top-4 right-4 z-10">
+              <CreditsDisplay 
+                balance={credits.balance} 
+                onBuyCredits={() => setShowBuyCreditsModal(true)} 
+              />
+            </div>
+            <StartScreen onModelFinalized={handleModelFinalized} onCreditsUpdate={() => setCredits(getCredits())} />
           </motion.div>
         ) : (
           <motion.div
@@ -275,11 +290,18 @@ const App: React.FC = () => {
             transition={{ duration: 0.5, ease: 'easeInOut' }}
           >
             <main className="flex-grow relative flex flex-col md:flex-row overflow-hidden">
+              {/* Credits Display on Main App */}
+              <div className="absolute top-4 right-4 z-10">
+                <CreditsDisplay 
+                  balance={credits.balance} 
+                  onBuyCredits={() => setShowBuyCreditsModal(true)} 
+                />
+              </div>
+              
               <div className="w-full h-full flex-grow flex items-center justify-center bg-white pb-16 relative">
                 <Canvas 
                   displayImageUrl={displayImageUrl}
                   onStartOver={handleStartOver}
-                  onLogout={handleLogout}
                   isLoading={isLoading}
                   loadingMessage={loadingMessage}
                   onSelectPose={handlePoseSelect}
@@ -338,7 +360,15 @@ const App: React.FC = () => {
           </motion.div>
         )}
       </AnimatePresence>
-      <Footer isOnDressingScreen={isAuthenticated && !!modelImageUrl} />
+      
+      {/* Buy Credits Modal */}
+      <BuyCreditsModal 
+        isOpen={showBuyCreditsModal}
+        onClose={() => setShowBuyCreditsModal(false)}
+        currentBalance={credits.balance}
+      />
+      
+      <Footer isOnDressingScreen={!!modelImageUrl} />
     </div>
   );
 };

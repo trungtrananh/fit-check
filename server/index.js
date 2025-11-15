@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Modality } from '@google/genai';
+import Stripe from 'stripe';
+import { v4 as uuidv4 } from 'uuid';
 
 dotenv.config();
 
@@ -12,6 +14,14 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Initialize Stripe
+const stripe = process.env.STRIPE_SECRET_KEY 
+  ? new Stripe(process.env.STRIPE_SECRET_KEY)
+  : null;
+
+// In-memory credit store (in production, use a database)
+const creditStore = new Map();
 
 // Middleware
 app.use(cors());
@@ -60,7 +70,174 @@ const handleApiResponse = (response) => {
   throw new Error(errorMessage);
 };
 
-// API Routes
+// Credit Management APIs
+const INITIAL_FREE_CREDITS = 5;
+
+// Initialize or get credits for a token
+const getOrCreateCredits = (token) => {
+  if (!creditStore.has(token)) {
+    creditStore.set(token, {
+      balance: token === 'free_trial' ? INITIAL_FREE_CREDITS : 0,
+      createdAt: Date.now(),
+    });
+  }
+  return creditStore.get(token);
+};
+
+// Deduct credits API
+app.post('/api/credits/deduct', (req, res) => {
+  try {
+    const { amount, token, action } = req.body;
+    
+    if (!token || amount === undefined) {
+      return res.status(400).json({ error: 'Missing required fields' });
+    }
+
+    const credits = getOrCreateCredits(token);
+    
+    if (credits.balance < amount) {
+      return res.status(402).json({ 
+        error: 'Insufficient credits',
+        balance: credits.balance 
+      });
+    }
+
+    credits.balance -= amount;
+    creditStore.set(token, credits);
+
+    console.log(`Deducted ${amount} credits for ${action}. New balance: ${credits.balance}`);
+
+    res.json({
+      success: true,
+      newBalance: credits.balance,
+      token,
+    });
+  } catch (error) {
+    console.error('Credit deduction error:', error);
+    res.status(500).json({ error: 'Failed to deduct credits' });
+  }
+});
+
+// Sync credits API
+app.post('/api/credits/sync', (req, res) => {
+  try {
+    const { token } = req.body;
+    
+    if (!token) {
+      return res.status(400).json({ error: 'Missing token' });
+    }
+
+    const credits = getOrCreateCredits(token);
+
+    res.json({
+      balance: credits.balance,
+      token,
+    });
+  } catch (error) {
+    console.error('Credit sync error:', error);
+    res.status(500).json({ error: 'Failed to sync credits' });
+  }
+});
+
+// Stripe Payment APIs
+app.post('/api/payment/create-checkout', async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    const { priceId, credits } = req.body;
+    
+    // Generate a unique token for this purchase
+    const purchaseToken = uuidv4();
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      payment_method_types: ['card'],
+      line_items: [{
+        price: priceId,
+        quantity: 1,
+      }],
+      success_url: `${req.headers.origin || 'http://localhost:3000'}/payment-success?session_id={CHECKOUT_SESSION_ID}&token=${purchaseToken}&credits=${credits}`,
+      cancel_url: `${req.headers.origin || 'http://localhost:3000'}/`,
+      metadata: {
+        token: purchaseToken,
+        credits: credits.toString(),
+      },
+    });
+
+    res.json({ url: session.url });
+  } catch (error) {
+    console.error('Stripe checkout error:', error);
+    res.status(500).json({ error: 'Failed to create checkout session' });
+  }
+});
+
+// Payment success webhook/handler
+app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
+  if (!stripe) {
+    return res.status(500).send('Stripe not configured');
+  }
+
+  const sig = req.headers['stripe-signature'];
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+
+  try {
+    const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data.object;
+      const { token, credits } = session.metadata;
+
+      // Add credits to the user's account
+      const userCredits = getOrCreateCredits(token);
+      userCredits.balance += parseInt(credits, 10);
+      creditStore.set(token, userCredits);
+
+      console.log(`Added ${credits} credits to token ${token}. New balance: ${userCredits.balance}`);
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.status(400).send(`Webhook Error: ${error.message}`);
+  }
+});
+
+// Manual payment verification (for success page)
+app.post('/api/payment/verify', async (req, res) => {
+  try {
+    if (!stripe) {
+      return res.status(500).json({ error: 'Stripe not configured' });
+    }
+
+    const { sessionId, token, credits } = req.body;
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+    if (session.payment_status === 'paid') {
+      // Add credits
+      const userCredits = getOrCreateCredits(token);
+      userCredits.balance += parseInt(credits, 10);
+      creditStore.set(token, userCredits);
+
+      console.log(`Verified payment and added ${credits} credits to token ${token}`);
+
+      res.json({
+        success: true,
+        newBalance: userCredits.balance,
+        token,
+      });
+    } else {
+      res.status(402).json({ error: 'Payment not completed' });
+    }
+  } catch (error) {
+    console.error('Payment verification error:', error);
+    res.status(500).json({ error: 'Failed to verify payment' });
+  }
+});
+
+// Gemini API Routes
 app.post('/api/gemini/model-image', async (req, res) => {
   try {
     const { userImage, prompt } = req.body;
