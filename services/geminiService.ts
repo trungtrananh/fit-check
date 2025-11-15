@@ -3,7 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 
-import { GoogleGenAI, GenerateContentResponse, Modality } from "@google/genai";
+// API endpoint - use proxy server in production
+const API_BASE_URL = window.location.origin;
 
 const fileToPart = async (file: File) => {
     const dataUrl = await new Promise<string>((resolve, reject) => {
@@ -12,69 +13,39 @@ const fileToPart = async (file: File) => {
         reader.onload = () => resolve(reader.result as string);
         reader.onerror = error => reject(error);
     });
-    const { mimeType, data } = dataUrlToParts(dataUrl);
-    return { inlineData: { mimeType, data } };
+    return dataUrl;
 };
 
-const dataUrlToParts = (dataUrl: string) => {
-    const arr = dataUrl.split(',');
-    if (arr.length < 2) throw new Error("Invalid data URL");
-    const mimeMatch = arr[0].match(/:(.*?);/);
-    if (!mimeMatch || !mimeMatch[1]) throw new Error("Could not parse MIME type from data URL");
-    return { mimeType: mimeMatch[1], data: arr[1] };
-}
+const callGeminiAPI = async (endpoint: string, data: any): Promise<string> => {
+    const response = await fetch(`${API_BASE_URL}/api/gemini/${endpoint}`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+    });
 
-const dataUrlToPart = (dataUrl: string) => {
-    const { mimeType, data } = dataUrlToParts(dataUrl);
-    return { inlineData: { mimeType, data } };
-}
-
-const handleApiResponse = (response: GenerateContentResponse): string => {
-    if (response.promptFeedback?.blockReason) {
-        const { blockReason, blockReasonMessage } = response.promptFeedback;
-        const errorMessage = `Request was blocked. Reason: ${blockReason}. ${blockReasonMessage || ''}`;
-        throw new Error(errorMessage);
+    if (!response.ok) {
+        const error = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(error.error || `API request failed: ${response.statusText}`);
     }
 
-    // Find the first image part in any candidate
-    for (const candidate of response.candidates ?? []) {
-        const imagePart = candidate.content?.parts?.find(part => part.inlineData);
-        if (imagePart?.inlineData) {
-            const { mimeType, data } = imagePart.inlineData;
-            return `data:${mimeType};base64,${data}`;
-        }
-    }
-
-    const finishReason = response.candidates?.[0]?.finishReason;
-    if (finishReason && finishReason !== 'STOP') {
-        const errorMessage = `Image generation stopped unexpectedly. Reason: ${finishReason}. This often relates to safety settings.`;
-        throw new Error(errorMessage);
-    }
-    const textFeedback = response.text?.trim();
-    const errorMessage = `The AI model did not return an image. ` + (textFeedback ? `The model responded with text: "${textFeedback}"` : "This can happen due to safety filters or if the request is too complex. Please try a different image.");
-    throw new Error(errorMessage);
+    const result = await response.json();
+    return result.imageData;
 };
-
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
-const model = 'gemini-2.5-flash-image';
 
 export const generateModelImage = async (userImage: File): Promise<string> => {
-    const userImagePart = await fileToPart(userImage);
+    const userImageData = await fileToPart(userImage);
     const prompt = "You are an expert fashion photographer AI. Transform the person in this image into a full-body fashion model photo suitable for an e-commerce website. The background must be a clean, neutral studio backdrop (light gray, #f0f0f0). The person should have a neutral, professional model expression. Preserve the person's identity, unique features, and body type, but place them in a standard, relaxed standing model pose. The final image must be photorealistic. Return ONLY the final image.";
-    const response = await ai.models.generateContent({
-        model,
-        contents: { parts: [userImagePart, { text: prompt }] },
-        config: {
-            // FIX: responseModalities must be an array with a single `Modality.IMAGE` element for this model.
-            responseModalities: [Modality.IMAGE],
-        },
+    
+    return await callGeminiAPI('model-image', {
+        userImage: userImageData,
+        prompt
     });
-    return handleApiResponse(response);
 };
 
 export const generateVirtualTryOnImage = async (modelImageUrl: string, garmentImage: File): Promise<string> => {
-    const modelImagePart = dataUrlToPart(modelImageUrl);
-    const garmentImagePart = await fileToPart(garmentImage);
+    const garmentImageData = await fileToPart(garmentImage);
     const prompt = `You are an expert virtual try-on AI. You will be given a 'model image' and a 'garment image'. Your task is to create a new photorealistic image where the person from the 'model image' is wearing the clothing from the 'garment image'.
 
 **Crucial Rules:**
@@ -83,27 +54,20 @@ export const generateVirtualTryOnImage = async (modelImageUrl: string, garmentIm
 3.  **Preserve the Background:** The entire background from the 'model image' MUST be preserved perfectly.
 4.  **Apply the Garment:** Realistically fit the new garment onto the person. It should adapt to their pose with natural folds, shadows, and lighting consistent with the original scene.
 5.  **Output:** Return ONLY the final, edited image. Do not include any text.`;
-    const response = await ai.models.generateContent({
-        model,
-        contents: { parts: [modelImagePart, garmentImagePart, { text: prompt }] },
-        config: {
-            // FIX: responseModalities must be an array with a single `Modality.IMAGE` element for this model.
-            responseModalities: [Modality.IMAGE],
-        },
+    
+    return await callGeminiAPI('virtual-tryon', {
+        modelImage: modelImageUrl,
+        garmentImage: garmentImageData,
+        prompt
     });
-    return handleApiResponse(response);
 };
 
 export const generatePoseVariation = async (tryOnImageUrl: string, poseInstruction: string): Promise<string> => {
-    const tryOnImagePart = dataUrlToPart(tryOnImageUrl);
     const prompt = `You are an expert fashion photographer AI. Take this image and regenerate it from a different perspective. The person, clothing, and background style must remain identical. The new perspective should be: "${poseInstruction}". Return ONLY the final image.`;
-    const response = await ai.models.generateContent({
-        model,
-        contents: { parts: [tryOnImagePart, { text: prompt }] },
-        config: {
-            // FIX: responseModalities must be an array with a single `Modality.IMAGE` element for this model.
-            responseModalities: [Modality.IMAGE],
-        },
+    
+    return await callGeminiAPI('pose-variation', {
+        tryOnImage: tryOnImageUrl,
+        poseInstruction,
+        prompt
     });
-    return handleApiResponse(response);
 };
