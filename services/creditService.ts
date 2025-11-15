@@ -5,6 +5,9 @@
 
 import { UserCredits, CREDIT_COSTS } from '../types';
 
+// Re-export CREDIT_COSTS for convenience
+export { CREDIT_COSTS };
+
 const STORAGE_KEY = 'user_credits';
 const INITIAL_FREE_CREDITS = 5;
 
