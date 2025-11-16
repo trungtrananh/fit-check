@@ -30,9 +30,10 @@ COPY --from=builder /app/dist ./dist
 # Copy server code
 COPY server ./server
 
-# Expose port
-EXPOSE 3000
+# Expose port (Cloud Run will set PORT env var)
+EXPOSE 8080
 
 # Start the server
+# Cloud Run sets PORT environment variable automatically
 CMD ["node", "server/index.js"]
 

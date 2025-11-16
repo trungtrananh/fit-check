@@ -12,6 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+// Cloud Run sets PORT automatically, default to 3000 for local development
 const PORT = process.env.PORT || 3000;
 
 // In-memory credit store (in production, use a database)
@@ -579,7 +580,8 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, '../dist/index.html'));
 });
 
-app.listen(PORT, () => {
+// Cloud Run requires listening on 0.0.0.0, not localhost
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Gemini API Key configured: ${!!process.env.GEMINI_API_KEY}`);
   console.log(`Credit system: Simple code-based redemption (no payment gateway)`);
