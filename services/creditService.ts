@@ -8,6 +8,14 @@ import { UserCredits, CREDIT_COSTS } from '../types';
 const STORAGE_KEY = 'user_credits';
 const INITIAL_FREE_CREDITS = 5;
 
+// Generate unique token for each new user
+const generateUniqueToken = (): string => {
+  // Combine timestamp + random string for uniqueness
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 15);
+  return `user_${timestamp}_${random}`;
+};
+
 // Get credits from localStorage
 export const getCredits = (): UserCredits => {
   try {
@@ -20,10 +28,10 @@ export const getCredits = (): UserCredits => {
     console.error('Error reading credits:', error);
   }
   
-  // Initialize with free credits
+  // Initialize with free credits and unique token
   const initialCredits: UserCredits = {
     balance: INITIAL_FREE_CREDITS,
-    token: 'free_trial',
+    token: generateUniqueToken(), // Unique token for each user
     lastUpdated: Date.now(),
   };
   localStorage.setItem(STORAGE_KEY, JSON.stringify(initialCredits));

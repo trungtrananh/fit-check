@@ -146,14 +146,29 @@ app.post('/api/credits/redeem-code', (req, res) => {
       return res.status(400).json({ error: 'Missing code or token' });
     }
 
-    // Check if code exists and is valid
-    const creditCode = creditCodes.get(code);
+    // Normalize code to uppercase for lookup
+    const normalizedCode = code.toUpperCase().trim();
+    
+    console.log(`Attempting to redeem code: "${normalizedCode}"`);
+    console.log(`Available codes:`, Array.from(creditCodes.keys()));
+    console.log(`Total codes in memory: ${creditCodes.size}`);
+
+    // Check if code exists and is valid (case-insensitive)
+    let creditCode = null;
+    for (const [storedCode, codeData] of creditCodes.entries()) {
+      if (storedCode.toUpperCase() === normalizedCode) {
+        creditCode = codeData;
+        break;
+      }
+    }
     
     if (!creditCode) {
+      console.log(`Code "${normalizedCode}" not found in creditCodes map`);
       return res.status(404).json({ error: 'Invalid credit code' });
     }
 
     if (creditCode.used) {
+      console.log(`Code "${normalizedCode}" has already been used by token: ${creditCode.usedBy}`);
       return res.status(400).json({ error: 'Credit code already used' });
     }
 
@@ -162,13 +177,16 @@ app.post('/api/credits/redeem-code', (req, res) => {
     userCredits.balance += creditCode.credits;
     creditStore.set(token, userCredits);
 
-    // Mark code as used
-    creditCode.used = true;
-    creditCode.usedBy = token;
-    creditCode.usedAt = Date.now();
-    creditCodes.set(code, creditCode);
+    // Mark code as used (use the original stored code key)
+    const originalCodeKey = Array.from(creditCodes.keys()).find(k => k.toUpperCase() === normalizedCode);
+    if (originalCodeKey) {
+      creditCode.used = true;
+      creditCode.usedBy = token;
+      creditCode.usedAt = Date.now();
+      creditCodes.set(originalCodeKey, creditCode);
+    }
 
-    console.log(`Redeemed code ${code} for ${creditCode.credits} credits. Token: ${token}. New balance: ${userCredits.balance}`);
+    console.log(`✅ Successfully redeemed code ${normalizedCode} for ${creditCode.credits} credits. Token: ${token}. New balance: ${userCredits.balance}`);
 
     res.json({
       success: true,
@@ -192,8 +210,13 @@ app.post('/api/admin/generate-code', (req, res) => {
       return res.status(400).json({ error: 'Invalid credits amount' });
     }
 
-    // Generate or use provided code
-    const creditCode = code || Math.random().toString(36).substring(2, 15).toUpperCase();
+    // Generate or use provided code (always uppercase)
+    const creditCode = (code ? code.toUpperCase().trim() : Math.random().toString(36).substring(2, 15).toUpperCase());
+    
+    // Check if code already exists
+    if (creditCodes.has(creditCode)) {
+      return res.status(400).json({ error: 'Code already exists' });
+    }
     
     creditCodes.set(creditCode, {
       code: creditCode,
@@ -202,7 +225,8 @@ app.post('/api/admin/generate-code', (req, res) => {
       createdAt: Date.now(),
     });
 
-    console.log(`Generated credit code: ${creditCode} for ${credits} credits`);
+    console.log(`✅ Generated credit code: ${creditCode} for ${credits} credits`);
+    console.log(`Total codes in memory: ${creditCodes.size}`);
 
     res.json({
       success: true,
@@ -212,6 +236,27 @@ app.post('/api/admin/generate-code', (req, res) => {
   } catch (error) {
     console.error('Code generation error:', error);
     res.status(500).json({ error: 'Failed to generate credit code' });
+  }
+});
+
+// Debug endpoint: List all codes (remove in production or add authentication)
+app.get('/api/admin/list-codes', (req, res) => {
+  try {
+    const codes = Array.from(creditCodes.entries()).map(([code, data]) => ({
+      code,
+      credits: data.credits,
+      used: data.used,
+      usedBy: data.usedBy || null,
+      createdAt: new Date(data.createdAt).toISOString(),
+    }));
+    
+    res.json({
+      total: creditCodes.size,
+      codes,
+    });
+  } catch (error) {
+    console.error('List codes error:', error);
+    res.status(500).json({ error: 'Failed to list codes' });
   }
 });
 
@@ -239,8 +284,22 @@ app.get('/api/admin/create-code', (req, res) => {
       `);
     }
 
-    // Generate or use provided code
-    const creditCode = code ? code.toUpperCase() : Math.random().toString(36).substring(2, 15).toUpperCase();
+    // Generate or use provided code (always uppercase)
+    const creditCode = code ? code.toUpperCase().trim() : Math.random().toString(36).substring(2, 15).toUpperCase();
+    
+    // Check if code already exists
+    if (creditCodes.has(creditCode)) {
+      return res.status(400).send(`
+        <html>
+          <head><title>Error</title></head>
+          <body style="font-family: Arial; padding: 40px; max-width: 600px; margin: 0 auto;">
+            <h1>❌ Code đã tồn tại!</h1>
+            <p>Code "${creditCode}" đã được tạo trước đó.</p>
+            <p><a href="/api/admin/create-code?credits=${credits}">Tạo code mới</a></p>
+          </body>
+        </html>
+      `);
+    }
     
     creditCodes.set(creditCode, {
       code: creditCode,
@@ -249,7 +308,8 @@ app.get('/api/admin/create-code', (req, res) => {
       createdAt: Date.now(),
     });
 
-    console.log(`Generated credit code: ${creditCode} for ${credits} credits`);
+    console.log(`✅ Generated credit code: ${creditCode} for ${credits} credits`);
+    console.log(`Total codes in memory: ${creditCodes.size}`);
 
     res.send(`
       <html>
