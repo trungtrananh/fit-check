@@ -10,7 +10,8 @@ import { Compare } from './ui/compare';
 import { generateModelImage } from '../services/geminiService';
 import Spinner from './Spinner';
 import { getFriendlyErrorMessage } from '../lib/utils';
-import { getCredits, deductCredits, CREDIT_COSTS } from '../services/creditService';
+import { getCredits, deductCredits } from '../services/creditService';
+import { CREDIT_COSTS } from '../types';
 
 interface StartScreenProps {
   onModelFinalized: (modelUrl: string) => void;
