@@ -140,24 +140,37 @@ app.post('/api/credits/sync', (req, res) => {
 // Admin can generate codes to add credits
 app.post('/api/credits/redeem-code', (req, res) => {
   try {
-    const { code, token } = req.body;
+    const { code, token, email } = req.body;
     
     if (!code || !token) {
       return res.status(400).json({ error: 'Missing code or token' });
     }
 
+    if (!email) {
+      return res.status(400).json({ error: 'Email is required to redeem code' });
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    const normalizedEmail = email.toLowerCase().trim();
+    if (!emailRegex.test(normalizedEmail)) {
+      return res.status(400).json({ error: 'Invalid email format' });
+    }
+
     // Normalize code to uppercase for lookup
     const normalizedCode = code.toUpperCase().trim();
     
-    console.log(`Attempting to redeem code: "${normalizedCode}"`);
+    console.log(`Attempting to redeem code: "${normalizedCode}" with email: "${normalizedEmail}"`);
     console.log(`Available codes:`, Array.from(creditCodes.keys()));
     console.log(`Total codes in memory: ${creditCodes.size}`);
 
     // Check if code exists and is valid (case-insensitive)
     let creditCode = null;
+    let originalCodeKey = null;
     for (const [storedCode, codeData] of creditCodes.entries()) {
       if (storedCode.toUpperCase() === normalizedCode) {
         creditCode = codeData;
+        originalCodeKey = storedCode;
         break;
       }
     }
@@ -167,9 +180,16 @@ app.post('/api/credits/redeem-code', (req, res) => {
       return res.status(404).json({ error: 'Invalid credit code' });
     }
 
+    // Check if code is already used
     if (creditCode.used) {
-      console.log(`Code "${normalizedCode}" has already been used by token: ${creditCode.usedBy}`);
+      console.log(`Code "${normalizedCode}" has already been used by email: ${creditCode.usedByEmail}`);
       return res.status(400).json({ error: 'Credit code already used' });
+    }
+
+    // Check if email matches (if code has email restriction)
+    if (creditCode.email && creditCode.email.toLowerCase() !== normalizedEmail) {
+      console.log(`Email mismatch. Code email: ${creditCode.email}, provided email: ${normalizedEmail}`);
+      return res.status(403).json({ error: 'This code is restricted to a different email address' });
     }
 
     // Add credits to user account
@@ -177,16 +197,16 @@ app.post('/api/credits/redeem-code', (req, res) => {
     userCredits.balance += creditCode.credits;
     creditStore.set(token, userCredits);
 
-    // Mark code as used (use the original stored code key)
-    const originalCodeKey = Array.from(creditCodes.keys()).find(k => k.toUpperCase() === normalizedCode);
+    // Mark code as used
     if (originalCodeKey) {
       creditCode.used = true;
       creditCode.usedBy = token;
+      creditCode.usedByEmail = normalizedEmail;
       creditCode.usedAt = Date.now();
       creditCodes.set(originalCodeKey, creditCode);
     }
 
-    console.log(`✅ Successfully redeemed code ${normalizedCode} for ${creditCode.credits} credits. Token: ${token}. New balance: ${userCredits.balance}`);
+    console.log(`✅ Successfully redeemed code ${normalizedCode} for ${creditCode.credits} credits. Email: ${normalizedEmail}. Token: ${token}. New balance: ${userCredits.balance}`);
 
     res.json({
       success: true,
@@ -204,10 +224,18 @@ app.post('/api/credits/redeem-code', (req, res) => {
 // For now, you can call this manually or create codes in your database
 app.post('/api/admin/generate-code', (req, res) => {
   try {
-    const { credits, code } = req.body;
+    const { credits, code, email } = req.body;
     
     if (!credits || credits <= 0) {
       return res.status(400).json({ error: 'Invalid credits amount' });
+    }
+
+    // Validate email if provided
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).json({ error: 'Invalid email format' });
+      }
     }
 
     // Generate or use provided code (always uppercase)
@@ -221,17 +249,19 @@ app.post('/api/admin/generate-code', (req, res) => {
     creditCodes.set(creditCode, {
       code: creditCode,
       credits: parseInt(credits, 10),
+      email: email ? email.toLowerCase().trim() : null, // Store email if provided
       used: false,
       createdAt: Date.now(),
     });
 
-    console.log(`✅ Generated credit code: ${creditCode} for ${credits} credits`);
+    console.log(`✅ Generated credit code: ${creditCode} for ${credits} credits${email ? ` (restricted to: ${email})` : ''}`);
     console.log(`Total codes in memory: ${creditCodes.size}`);
 
     res.json({
       success: true,
       code: creditCode,
       credits: parseInt(credits, 10),
+      email: email ? email.toLowerCase().trim() : null,
     });
   } catch (error) {
     console.error('Code generation error:', error);
@@ -239,19 +269,27 @@ app.post('/api/admin/generate-code', (req, res) => {
   }
 });
 
-// Debug endpoint: List all codes (remove in production or add authentication)
+// Admin endpoint: List all codes
 app.get('/api/admin/list-codes', (req, res) => {
   try {
     const codes = Array.from(creditCodes.entries()).map(([code, data]) => ({
       code,
       credits: data.credits,
+      email: data.email || null,
       used: data.used,
       usedBy: data.usedBy || null,
+      usedByEmail: data.usedByEmail || null,
+      usedAt: data.usedAt ? new Date(data.usedAt).toISOString() : null,
       createdAt: new Date(data.createdAt).toISOString(),
     }));
     
+    // Sort by created date (newest first)
+    codes.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    
     res.json({
       total: creditCodes.size,
+      used: codes.filter(c => c.used).length,
+      unused: codes.filter(c => !c.used).length,
       codes,
     });
   } catch (error) {
@@ -284,6 +322,26 @@ app.get('/api/admin/create-code', (req, res) => {
       `);
     }
 
+    // Get email from query parameter
+    const email = req.query.email;
+
+    // Validate email if provided
+    if (email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(email.trim())) {
+        return res.status(400).send(`
+          <html>
+            <head><title>Error</title></head>
+            <body style="font-family: Arial; padding: 40px; max-width: 600px; margin: 0 auto;">
+              <h1>❌ Email không hợp lệ!</h1>
+              <p>Email "${email}" không đúng định dạng.</p>
+              <p><a href="/api/admin/create-code?credits=${credits}">Thử lại</a></p>
+            </body>
+          </html>
+        `);
+      }
+    }
+
     // Generate or use provided code (always uppercase)
     const creditCode = code ? code.toUpperCase().trim() : Math.random().toString(36).substring(2, 15).toUpperCase();
     
@@ -304,11 +362,12 @@ app.get('/api/admin/create-code', (req, res) => {
     creditCodes.set(creditCode, {
       code: creditCode,
       credits: credits,
+      email: email ? email.toLowerCase().trim() : null,
       used: false,
       createdAt: Date.now(),
     });
 
-    console.log(`✅ Generated credit code: ${creditCode} for ${credits} credits`);
+    console.log(`✅ Generated credit code: ${creditCode} for ${credits} credits${email ? ` (restricted to: ${email})` : ''}`);
     console.log(`Total codes in memory: ${creditCodes.size}`);
 
     res.send(`
@@ -331,12 +390,15 @@ app.get('/api/admin/create-code', (req, res) => {
             <h2>📋 Thông tin code:</h2>
             <div class="code">${creditCode}</div>
             <p class="info"><strong>Credits:</strong> ${credits}</p>
+            ${email ? `<p class="info"><strong>Email restriction:</strong> ${email}</p>` : '<p class="info"><strong>Email restriction:</strong> None (anyone can use)</p>'}
             <p class="info">💡 Người dùng có thể nhập code này trong ứng dụng để nhận credits.</p>
+            ${email ? `<p class="info">⚠️ Code này chỉ có thể được dùng bởi email: <strong>${email}</strong></p>` : ''}
             <p class="info">📝 <strong>Hãy copy và lưu code này lại!</strong></p>
             <button onclick="navigator.clipboard.writeText('${creditCode}')">📋 Copy Code</button>
             <br><br>
             <a href="/api/admin/create-code?credits=25">Tạo code khác (25 credits)</a> | 
-            <a href="/api/admin/create-code?credits=50">Tạo code khác (50 credits)</a>
+            <a href="/api/admin/create-code?credits=50">Tạo code khác (50 credits)</a> |
+            <a href="/admin">Admin Dashboard</a>
           </div>
         </body>
       </html>

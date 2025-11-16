@@ -16,6 +16,7 @@ interface BuyCreditsModalProps {
 
 const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, currentBalance, onCreditsUpdate }) => {
   const [code, setCode] = useState('');
+  const [email, setEmail] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -28,16 +29,29 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
       return;
     }
 
+    if (!email.trim()) {
+      setError('Please enter your email address');
+      return;
+    }
+
+    // Validate email format
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email.trim())) {
+      setError('Please enter a valid email address');
+      return;
+    }
+
     setIsProcessing(true);
     setError(null);
     setSuccess(null);
     
     try {
-      const result = await redeemCreditCode(code);
+      const result = await redeemCreditCode(code, email.trim());
       
       if (result.success) {
         setSuccess(`Successfully added ${result.creditsAdded} credits! Your new balance is ${result.newBalance} credits.`);
         setCode('');
+        setEmail('');
         onCreditsUpdate();
         
         // Clear success message after 5 seconds
@@ -140,6 +154,27 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
                 />
               </div>
 
+              <div>
+                <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
+                  Email Address <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    setError(null);
+                    setSuccess(null);
+                  }}
+                  placeholder="your.email@example.com"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-base"
+                  disabled={isProcessing}
+                  required
+                />
+                <p className="text-xs text-gray-500 mt-1">Email is required to verify code ownership</p>
+              </div>
+
               {error && (
                 <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-md">
                   <p className="font-semibold">Error</p>
@@ -156,7 +191,7 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
 
               <button
                 type="submit"
-                disabled={isProcessing || !code.trim()}
+                disabled={isProcessing || !code.trim() || !email.trim()}
                 className="w-full py-3 px-6 bg-gradient-to-r from-purple-600 to-blue-600 text-white font-semibold rounded-lg hover:from-purple-700 hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isProcessing ? (

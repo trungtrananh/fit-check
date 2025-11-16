@@ -139,7 +139,7 @@ export const syncCredits = async (): Promise<UserCredits> => {
 };
 
 // Redeem credit code
-export const redeemCreditCode = async (code: string): Promise<{ success: boolean; creditsAdded?: number; newBalance?: number; error?: string }> => {
+export const redeemCreditCode = async (code: string, email: string): Promise<{ success: boolean; creditsAdded?: number; newBalance?: number; error?: string }> => {
   const credits = getCredits();
   
   try {
@@ -148,6 +148,7 @@ export const redeemCreditCode = async (code: string): Promise<{ success: boolean
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         code: code.toUpperCase().trim(),
+        email: email.toLowerCase().trim(),
         token: credits.token,
       }),
     });

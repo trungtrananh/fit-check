@@ -6,6 +6,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
+import AdminDashboard from './components/AdminDashboard';
 
 const rootElement = document.getElementById('root');
 if (!rootElement) {
@@ -13,8 +14,20 @@ if (!rootElement) {
 }
 
 const root = ReactDOM.createRoot(rootElement);
-root.render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+
+// Simple routing: Check if we're on admin page
+const currentPath = window.location.pathname;
+
+if (currentPath === '/admin') {
+  root.render(
+    <React.StrictMode>
+      <AdminDashboard />
+    </React.StrictMode>
+  );
+} else {
+  root.render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+}
