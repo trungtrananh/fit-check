@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import AdminLogin from './AdminLogin';
 
 interface CreditCode {
   code: string;
@@ -24,6 +25,7 @@ interface CodesResponse {
 }
 
 const AdminDashboard: React.FC = () => {
+  const [authenticated, setAuthenticated] = useState<boolean | null>(null);
   const [codes, setCodes] = useState<CreditCode[]>([]);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
@@ -37,14 +39,79 @@ const AdminDashboard: React.FC = () => {
   const [formError, setFormError] = useState<string | null>(null);
   const [formSuccess, setFormSuccess] = useState<string | null>(null);
 
+  // Check authentication on mount
+  useEffect(() => {
+    checkAuth();
+  }, []);
+
+  const checkAuth = async () => {
+    try {
+      const response = await fetch('/api/admin/check-auth', {
+        credentials: 'include',
+      });
+      if (response.ok) {
+        const data = await response.json();
+        setAuthenticated(data.authenticated);
+        if (data.authenticated) {
+          loadCodes();
+        }
+      } else {
+        setAuthenticated(false);
+      }
+    } catch (error) {
+      console.error('Auth check error:', error);
+      setAuthenticated(false);
+    }
+  };
+
+  const handleLogin = async (password: string): Promise<boolean> => {
+    try {
+      const response = await fetch('/api/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ password }),
+      });
+
+      if (response.ok) {
+        setAuthenticated(true);
+        loadCodes();
+        return true;
+      }
+      return false;
+    } catch (error) {
+      console.error('Login error:', error);
+      return false;
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await fetch('/api/admin/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+      setAuthenticated(false);
+      setCodes([]);
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+  };
+
   // Load codes
   const loadCodes = async () => {
+    if (!authenticated) return;
+    
     try {
       setLoading(true);
-      const response = await fetch('/api/admin/list-codes');
+      const response = await fetch('/api/admin/list-codes', {
+        credentials: 'include',
+      });
       if (response.ok) {
         const data: CodesResponse = await response.json();
         setCodes(data.codes);
+      } else if (response.status === 401) {
+        setAuthenticated(false);
       }
     } catch (error) {
       console.error('Failed to load codes:', error);
@@ -54,11 +121,13 @@ const AdminDashboard: React.FC = () => {
   };
 
   useEffect(() => {
-    loadCodes();
-    // Refresh every 5 seconds
-    const interval = setInterval(loadCodes, 5000);
-    return () => clearInterval(interval);
-  }, []);
+    if (authenticated) {
+      loadCodes();
+      // Refresh every 5 seconds
+      const interval = setInterval(loadCodes, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [authenticated]);
 
   // Create code
   const handleCreateCode = async (e: React.FormEvent) => {
@@ -88,6 +157,7 @@ const AdminDashboard: React.FC = () => {
       const response = await fetch('/api/admin/generate-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
         body: JSON.stringify(body),
       });
 
@@ -129,13 +199,36 @@ const AdminDashboard: React.FC = () => {
     unused: codes.filter(c => !c.used).length,
   };
 
+  // Show login page if not authenticated
+  if (authenticated === null) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-4 border-purple-600 border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  if (authenticated === false) {
+    return <AdminLogin onLogin={handleLogin} />;
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-purple-50 to-blue-50 p-4 md:p-8">
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="bg-white rounded-2xl shadow-lg p-6 mb-6">
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
-          <p className="text-gray-600">Manage credit codes and view usage statistics</p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-4xl font-bold text-gray-900 mb-2">Admin Dashboard</h1>
+              <p className="text-gray-600">Manage credit codes and view usage statistics</p>
+            </div>
+            <button
+              onClick={handleLogout}
+              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors text-sm font-semibold"
+            >
+              Logout
+            </button>
+          </div>
         </div>
 
         {/* Stats */}

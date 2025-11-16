@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Modality } from '@google/genai';
+import session from 'express-session';
 
 dotenv.config();
 
@@ -21,9 +22,24 @@ const creditStore = new Map();
 const creditCodes = new Map();
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: true,
+  credentials: true,
+}));
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Session configuration for admin authentication
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'fit-check-admin-secret-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: process.env.NODE_ENV === 'production', // Use secure cookies in production (HTTPS)
+    httpOnly: true,
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+  },
+}));
 
 // Initialize Gemini AI
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
@@ -220,9 +236,8 @@ app.post('/api/credits/redeem-code', (req, res) => {
   }
 });
 
-// Admin API: Generate credit codes (in production, protect this endpoint)
-// For now, you can call this manually or create codes in your database
-app.post('/api/admin/generate-code', (req, res) => {
+// Admin API: Generate credit codes (protected)
+app.post('/api/admin/generate-code', requireAdmin, (req, res) => {
   try {
     const { credits, code, email } = req.body;
     
@@ -269,8 +284,59 @@ app.post('/api/admin/generate-code', (req, res) => {
   }
 });
 
-// Admin endpoint: List all codes
-app.get('/api/admin/list-codes', (req, res) => {
+// Admin authentication middleware
+const requireAdmin = (req, res, next) => {
+  if (req.session && req.session.isAdmin) {
+    return next();
+  }
+  return res.status(401).json({ error: 'Unauthorized. Admin authentication required.' });
+};
+
+// Admin login endpoint
+app.post('/api/admin/login', (req, res) => {
+  try {
+    const { password } = req.body;
+    const adminPassword = process.env.ADMIN_PASSWORD || 'admin123'; // Default password, change in production
+    
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+    
+    if (password === adminPassword) {
+      req.session.isAdmin = true;
+      req.session.loginTime = Date.now();
+      console.log('Admin logged in successfully');
+      res.json({ success: true, message: 'Login successful' });
+    } else {
+      console.log('Failed admin login attempt');
+      res.status(401).json({ error: 'Invalid password' });
+    }
+  } catch (error) {
+    console.error('Admin login error:', error);
+    res.status(500).json({ error: 'Failed to process login' });
+  }
+});
+
+// Admin logout endpoint
+app.post('/api/admin/logout', (req, res) => {
+  req.session.destroy((err) => {
+    if (err) {
+      console.error('Logout error:', err);
+      return res.status(500).json({ error: 'Failed to logout' });
+    }
+    res.json({ success: true, message: 'Logged out successfully' });
+  });
+});
+
+// Check admin authentication status
+app.get('/api/admin/check-auth', (req, res) => {
+  res.json({
+    authenticated: !!(req.session && req.session.isAdmin),
+  });
+});
+
+// Admin endpoint: List all codes (protected)
+app.get('/api/admin/list-codes', requireAdmin, (req, res) => {
   try {
     const codes = Array.from(creditCodes.entries()).map(([code, data]) => ({
       code,
@@ -298,9 +364,9 @@ app.get('/api/admin/list-codes', (req, res) => {
   }
 });
 
-// Simple GET endpoint to create codes via browser (for easy testing)
+// Simple GET endpoint to create codes via browser (protected)
 // Usage: http://localhost:3000/api/admin/create-code?credits=25&code=WELCOME25
-app.get('/api/admin/create-code', (req, res) => {
+app.get('/api/admin/create-code', requireAdmin, (req, res) => {
   try {
     const credits = parseInt(req.query.credits, 10);
     const code = req.query.code;
