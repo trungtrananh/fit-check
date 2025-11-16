@@ -5,9 +5,6 @@
 
 import { UserCredits, CREDIT_COSTS } from '../types';
 
-// Re-export CREDIT_COSTS for convenience
-export { CREDIT_COSTS };
-
 const STORAGE_KEY = 'user_credits';
 const INITIAL_FREE_CREDITS = 5;
 
@@ -131,5 +128,45 @@ export const syncCredits = async (): Promise<UserCredits> => {
   }
   
   return credits;
+};
+
+// Redeem credit code
+export const redeemCreditCode = async (code: string): Promise<{ success: boolean; creditsAdded?: number; newBalance?: number; error?: string }> => {
+  const credits = getCredits();
+  
+  try {
+    const response = await fetch('/api/credits/redeem-code', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: code.toUpperCase().trim(),
+        token: credits.token,
+      }),
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ error: 'Failed to redeem code' }));
+      return { success: false, error: error.error || 'Invalid credit code' };
+    }
+
+    const result = await response.json();
+    
+    // Update local balance
+    const updatedCredits: UserCredits = {
+      balance: result.newBalance,
+      token: result.token,
+      lastUpdated: Date.now(),
+    };
+    
+    saveCredits(updatedCredits);
+    return {
+      success: true,
+      creditsAdded: result.creditsAdded,
+      newBalance: result.newBalance,
+    };
+  } catch (error) {
+    console.error('Error redeeming credit code:', error);
+    return { success: false, error: 'Network error. Please try again.' };
+  }
 };
 

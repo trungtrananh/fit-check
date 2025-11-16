@@ -14,8 +14,8 @@ A powerful virtual try-on application powered by Google Gemini AI. Upload your p
 - **AI Model Generation** - Transform your selfie into a professional fashion model photo
 - **Virtual Try-On** - See how clothes look on you with photorealistic AI
 - **Multiple Poses** - View your outfit from 6 different angles
-- **Credits System** - Pay only for what you use with flexible credit packages
-- **Secure Payments** - Powered by Stripe for safe transactions
+- **Credits System** - Simple code-based credit redemption system
+- **No Payment Gateway** - Independent credit code system
 
 ## 💳 Pricing
 
@@ -25,11 +25,10 @@ A powerful virtual try-on application powered by Google Gemini AI. Upload your p
 | Virtual Try-On | 3 credits |
 | Change Pose | 1 credit |
 
-**Credit Packages:**
-- Starter Pack: 10 credits - $4.99
-- Popular Pack: 25 credits - $9.99
-- Pro Pack: 50 credits - $14.99
-- Mega Pack: 100 credits - $24.99
+**Credit Codes:**
+- Admin creates credit codes with any amount
+- Users redeem codes to add credits to their account
+- See [CREDIT_CODE_SYSTEM.md](CREDIT_CODE_SYSTEM.md) for details
 
 ## 🚀 Quick Start
 
@@ -37,7 +36,6 @@ A powerful virtual try-on application powered by Google Gemini AI. Upload your p
 
 - Node.js (v20 or higher)
 - Gemini API Key ([Get one here](https://ai.google.dev/))
-- Stripe Account (for payment processing)
 
 ### Run Locally
 
@@ -58,7 +56,6 @@ A powerful virtual try-on application powered by Google Gemini AI. Upload your p
    Create `server/.env`:
    ```bash
    GEMINI_API_KEY=your_gemini_api_key
-   STRIPE_SECRET_KEY=sk_test_your_stripe_key
    PORT=3000
    ```
 
@@ -78,16 +75,17 @@ A powerful virtual try-on application powered by Google Gemini AI. Upload your p
    http://localhost:3000
    ```
 
-## 💰 Payment Setup
+## 💰 Credit Code System
 
-See detailed setup instructions in [PAYMENT_SETUP.md](PAYMENT_SETUP.md)
+See detailed instructions in:
+- [CREDIT_CODE_SYSTEM.md](CREDIT_CODE_SYSTEM.md) - Credit code system overview
+- [HUONG_DAN_TAO_CODE.md](HUONG_DAN_TAO_CODE.md) - How to create credit codes
 
 **Quick steps:**
-1. Create Stripe account
-2. Get API keys
-3. Create products in Stripe Dashboard
-4. Update Price IDs in `components/BuyCreditsModal.tsx`
-5. Configure environment variables
+1. Start the server
+2. Create credit codes via browser: `http://localhost:3000/api/admin/create-code?credits=25`
+3. Distribute codes to users
+4. Users redeem codes in the app
 
 ## ☁️ Deploy to Google Cloud Run
 
@@ -96,9 +94,6 @@ See detailed setup instructions in [PAYMENT_SETUP.md](PAYMENT_SETUP.md)
 ```bash
 # Gemini API Key
 echo -n "YOUR_GEMINI_API_KEY" | gcloud secrets create gemini_api_key --data-file=-
-
-# Stripe Secret Key
-echo -n "YOUR_STRIPE_SECRET_KEY" | gcloud secrets create stripe_secret_key --data-file=-
 ```
 
 ### 2. Deploy
@@ -109,18 +104,12 @@ gcloud run deploy fit-check \
   --region=us-central1 \
   --platform=managed \
   --allow-unauthenticated \
-  --update-secrets=GEMINI_API_KEY=gemini_api_key:latest,STRIPE_SECRET_KEY=stripe_secret_key:latest \
+  --update-secrets=GEMINI_API_KEY=gemini_api_key:latest \
   --memory=2Gi \
   --timeout=300
 ```
 
-### 3. Configure Stripe Webhook
-
-After deployment:
-1. Get your Cloud Run URL
-2. Add webhook in Stripe Dashboard: `https://your-url.com/api/payment/webhook`
-3. Select event: `checkout.session.completed`
-4. Create secret for webhook and add to Cloud Run
+See [DEPLOY.md](DEPLOY.md) for detailed deployment instructions.
 
 ## 🛠️ Tech Stack
 
@@ -128,7 +117,7 @@ After deployment:
 - **Styling**: Tailwind CSS + Framer Motion
 - **AI**: Google Gemini 2.5 Flash Image
 - **Backend**: Node.js + Express
-- **Payment**: Stripe
+- **Credits**: Simple code-based redemption system
 - **Deployment**: Google Cloud Run + Docker
 
 ## 📖 How It Works
@@ -138,15 +127,14 @@ After deployment:
 3. **Choose Outfit** → Select clothing from wardrobe
 4. **Virtual Try-On** → AI applies the outfit to your model
 5. **Change Poses** → View from different angles
-6. **Need More?** → Buy credits when you run out
+6. **Need More?** → Redeem credit codes to add credits
 
 ## 🔒 Security
 
 - ✅ No user authentication required
 - ✅ Credits tracked with verified tokens
 - ✅ API keys secured on server-side
-- ✅ Stripe handles all payment processing
-- ✅ PCI DSS compliant
+- ✅ Simple credit code system (no payment gateway)
 
 ## 📝 API Endpoints
 
@@ -158,11 +146,11 @@ After deployment:
 ### Credits
 - `POST /api/credits/deduct` - Deduct credits
 - `POST /api/credits/sync` - Sync balance
+- `POST /api/credits/redeem-code` - Redeem credit code
 
-### Payment
-- `POST /api/payment/create-checkout` - Create Stripe session
-- `POST /api/payment/webhook` - Handle Stripe events
-- `POST /api/payment/verify` - Verify payment
+### Admin
+- `POST /api/admin/generate-code` - Generate credit code (API)
+- `GET /api/admin/create-code` - Create credit code (Browser)
 
 ## 🧪 Testing
 

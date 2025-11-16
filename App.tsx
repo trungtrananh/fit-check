@@ -366,6 +366,7 @@ const App: React.FC = () => {
         isOpen={showBuyCreditsModal}
         onClose={() => setShowBuyCreditsModal(false)}
         currentBalance={credits.balance}
+        onCreditsUpdate={() => setCredits(getCredits())}
       />
       
       <Footer isOnDressingScreen={!!modelImageUrl} />

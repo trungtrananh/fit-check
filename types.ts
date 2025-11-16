@@ -14,14 +14,7 @@ export interface OutfitLayer {
   poseImages: Record<string, string>; // Maps pose instruction to image URL
 }
 
-export interface CreditPackage {
-  id: string;
-  name: string;
-  credits: number;
-  price: number;
-  priceId: string; // Stripe Price ID
-  popular?: boolean;
-}
+// CreditPackage interface removed - now using simple code redemption system
 
 export interface UserCredits {
   balance: number;

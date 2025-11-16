@@ -4,8 +4,6 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Modality } from '@google/genai';
-import Stripe from 'stripe';
-import { v4 as uuidv4 } from 'uuid';
 
 dotenv.config();
 
@@ -15,13 +13,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Initialize Stripe
-const stripe = process.env.STRIPE_SECRET_KEY 
-  ? new Stripe(process.env.STRIPE_SECRET_KEY)
-  : null;
-
 // In-memory credit store (in production, use a database)
 const creditStore = new Map();
+
+// Simple credit codes for adding credits (in production, use a database)
+// Format: { code: string, credits: number, used: boolean }
+const creditCodes = new Map();
 
 // Middleware
 app.use(cors());
@@ -139,101 +136,154 @@ app.post('/api/credits/sync', (req, res) => {
   }
 });
 
-// Stripe Payment APIs
-app.post('/api/payment/create-checkout', async (req, res) => {
+// Simple Credit Code System
+// Admin can generate codes to add credits
+app.post('/api/credits/redeem-code', (req, res) => {
   try {
-    if (!stripe) {
-      return res.status(500).json({ error: 'Stripe not configured' });
+    const { code, token } = req.body;
+    
+    if (!code || !token) {
+      return res.status(400).json({ error: 'Missing code or token' });
     }
 
-    const { priceId, credits } = req.body;
+    // Check if code exists and is valid
+    const creditCode = creditCodes.get(code);
     
-    // Generate a unique token for this purchase
-    const purchaseToken = uuidv4();
+    if (!creditCode) {
+      return res.status(404).json({ error: 'Invalid credit code' });
+    }
 
-    const session = await stripe.checkout.sessions.create({
-      mode: 'payment',
-      payment_method_types: ['card'],
-      line_items: [{
-        price: priceId,
-        quantity: 1,
-      }],
-      success_url: `${req.headers.origin || 'http://localhost:3000'}/payment-success?session_id={CHECKOUT_SESSION_ID}&token=${purchaseToken}&credits=${credits}`,
-      cancel_url: `${req.headers.origin || 'http://localhost:3000'}/`,
-      metadata: {
-        token: purchaseToken,
-        credits: credits.toString(),
-      },
+    if (creditCode.used) {
+      return res.status(400).json({ error: 'Credit code already used' });
+    }
+
+    // Add credits to user account
+    const userCredits = getOrCreateCredits(token);
+    userCredits.balance += creditCode.credits;
+    creditStore.set(token, userCredits);
+
+    // Mark code as used
+    creditCode.used = true;
+    creditCode.usedBy = token;
+    creditCode.usedAt = Date.now();
+    creditCodes.set(code, creditCode);
+
+    console.log(`Redeemed code ${code} for ${creditCode.credits} credits. Token: ${token}. New balance: ${userCredits.balance}`);
+
+    res.json({
+      success: true,
+      creditsAdded: creditCode.credits,
+      newBalance: userCredits.balance,
+      token,
+    });
+  } catch (error) {
+    console.error('Credit code redemption error:', error);
+    res.status(500).json({ error: 'Failed to redeem credit code' });
+  }
+});
+
+// Admin API: Generate credit codes (in production, protect this endpoint)
+// For now, you can call this manually or create codes in your database
+app.post('/api/admin/generate-code', (req, res) => {
+  try {
+    const { credits, code } = req.body;
+    
+    if (!credits || credits <= 0) {
+      return res.status(400).json({ error: 'Invalid credits amount' });
+    }
+
+    // Generate or use provided code
+    const creditCode = code || Math.random().toString(36).substring(2, 15).toUpperCase();
+    
+    creditCodes.set(creditCode, {
+      code: creditCode,
+      credits: parseInt(credits, 10),
+      used: false,
+      createdAt: Date.now(),
     });
 
-    res.json({ url: session.url });
+    console.log(`Generated credit code: ${creditCode} for ${credits} credits`);
+
+    res.json({
+      success: true,
+      code: creditCode,
+      credits: parseInt(credits, 10),
+    });
   } catch (error) {
-    console.error('Stripe checkout error:', error);
-    res.status(500).json({ error: 'Failed to create checkout session' });
+    console.error('Code generation error:', error);
+    res.status(500).json({ error: 'Failed to generate credit code' });
   }
 });
 
-// Payment success webhook/handler
-app.post('/api/payment/webhook', express.raw({ type: 'application/json' }), async (req, res) => {
-  if (!stripe) {
-    return res.status(500).send('Stripe not configured');
-  }
-
-  const sig = req.headers['stripe-signature'];
-  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
+// Simple GET endpoint to create codes via browser (for easy testing)
+// Usage: http://localhost:3000/api/admin/create-code?credits=25&code=WELCOME25
+app.get('/api/admin/create-code', (req, res) => {
   try {
-    const event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-
-    if (event.type === 'checkout.session.completed') {
-      const session = event.data.object;
-      const { token, credits } = session.metadata;
-
-      // Add credits to the user's account
-      const userCredits = getOrCreateCredits(token);
-      userCredits.balance += parseInt(credits, 10);
-      creditStore.set(token, userCredits);
-
-      console.log(`Added ${credits} credits to token ${token}. New balance: ${userCredits.balance}`);
+    const credits = parseInt(req.query.credits, 10);
+    const code = req.query.code;
+    
+    if (!credits || credits <= 0) {
+      return res.status(400).send(`
+        <html>
+          <head><title>Create Credit Code</title></head>
+          <body style="font-family: Arial; padding: 40px; max-width: 600px; margin: 0 auto;">
+            <h1>❌ Lỗi: Thiếu số credits</h1>
+            <p>Cách sử dụng:</p>
+            <ul>
+              <li><code>http://localhost:3000/api/admin/create-code?credits=25</code></li>
+              <li><code>http://localhost:3000/api/admin/create-code?credits=50&code=WELCOME50</code></li>
+            </ul>
+            <p><a href="/api/admin/create-code?credits=25">Ví dụ: Tạo code 25 credits</a></p>
+          </body>
+        </html>
+      `);
     }
 
-    res.json({ received: true });
+    // Generate or use provided code
+    const creditCode = code ? code.toUpperCase() : Math.random().toString(36).substring(2, 15).toUpperCase();
+    
+    creditCodes.set(creditCode, {
+      code: creditCode,
+      credits: credits,
+      used: false,
+      createdAt: Date.now(),
+    });
+
+    console.log(`Generated credit code: ${creditCode} for ${credits} credits`);
+
+    res.send(`
+      <html>
+        <head>
+          <title>Code Created Successfully</title>
+          <style>
+            body { font-family: Arial; padding: 40px; max-width: 600px; margin: 0 auto; background: #f5f5f5; }
+            .container { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .success { color: #10b981; font-size: 24px; margin-bottom: 20px; }
+            .code { background: #f3f4f6; padding: 15px; border-radius: 5px; font-family: monospace; font-size: 24px; font-weight: bold; margin: 20px 0; text-align: center; }
+            .info { color: #6b7280; margin: 10px 0; }
+            button { background: #8b5cf6; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin-top: 20px; }
+            button:hover { background: #7c3aed; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="success">✅ Code đã được tạo thành công!</div>
+            <h2>📋 Thông tin code:</h2>
+            <div class="code">${creditCode}</div>
+            <p class="info"><strong>Credits:</strong> ${credits}</p>
+            <p class="info">💡 Người dùng có thể nhập code này trong ứng dụng để nhận credits.</p>
+            <p class="info">📝 <strong>Hãy copy và lưu code này lại!</strong></p>
+            <button onclick="navigator.clipboard.writeText('${creditCode}')">📋 Copy Code</button>
+            <br><br>
+            <a href="/api/admin/create-code?credits=25">Tạo code khác (25 credits)</a> | 
+            <a href="/api/admin/create-code?credits=50">Tạo code khác (50 credits)</a>
+          </div>
+        </body>
+      </html>
+    `);
   } catch (error) {
-    console.error('Webhook error:', error);
-    res.status(400).send(`Webhook Error: ${error.message}`);
-  }
-});
-
-// Manual payment verification (for success page)
-app.post('/api/payment/verify', async (req, res) => {
-  try {
-    if (!stripe) {
-      return res.status(500).json({ error: 'Stripe not configured' });
-    }
-
-    const { sessionId, token, credits } = req.body;
-
-    const session = await stripe.checkout.sessions.retrieve(sessionId);
-
-    if (session.payment_status === 'paid') {
-      // Add credits
-      const userCredits = getOrCreateCredits(token);
-      userCredits.balance += parseInt(credits, 10);
-      creditStore.set(token, userCredits);
-
-      console.log(`Verified payment and added ${credits} credits to token ${token}`);
-
-      res.json({
-        success: true,
-        newBalance: userCredits.balance,
-        token,
-      });
-    } else {
-      res.status(402).json({ error: 'Payment not completed' });
-    }
-  } catch (error) {
-    console.error('Payment verification error:', error);
-    res.status(500).json({ error: 'Failed to verify payment' });
+    console.error('Code generation error:', error);
+    res.status(500).send(`<html><body><h1>Error: ${error.message}</h1></body></html>`);
   }
 });
 
@@ -344,5 +394,6 @@ app.get('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Gemini API Key configured: ${!!process.env.GEMINI_API_KEY}`);
+  console.log(`Credit system: Simple code-based redemption (no payment gateway)`);
 });
 

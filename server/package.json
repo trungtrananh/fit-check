@@ -11,9 +11,7 @@
     "express": "^4.21.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
-    "@google/genai": "^1.10.0",
-    "stripe": "^17.5.0",
-    "uuid": "^11.0.3"
+    "@google/genai": "^1.10.0"
   }
 }
 

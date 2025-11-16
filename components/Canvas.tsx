@@ -3,13 +3,14 @@
  * SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState } from 'react';
-import { RotateCcwIcon, ChevronLeftIcon, ChevronRightIcon } from './icons';
+import { RotateCcwIcon, ChevronLeftIcon, ChevronRightIcon, LogOutIcon } from './icons';
 import Spinner from './Spinner';
 import { AnimatePresence, motion } from 'framer-motion';
 
 interface CanvasProps {
   displayImageUrl: string | null;
   onStartOver: () => void;
+  onLogout: () => void;
   isLoading: boolean;
   loadingMessage: string;
   onSelectPose: (index: number) => void;
@@ -18,7 +19,7 @@ interface CanvasProps {
   availablePoseKeys: string[];
 }
 
-const Canvas: React.FC<CanvasProps> = ({ displayImageUrl, onStartOver, isLoading, loadingMessage, onSelectPose, poseInstructions, currentPoseIndex, availablePoseKeys }) => {
+const Canvas: React.FC<CanvasProps> = ({ displayImageUrl, onStartOver, onLogout, isLoading, loadingMessage, onSelectPose, poseInstructions, currentPoseIndex, availablePoseKeys }) => {
   const [isPoseMenuOpen, setIsPoseMenuOpen] = useState(false);
   
   const handlePreviousPose = () => {
@@ -72,13 +73,21 @@ const Canvas: React.FC<CanvasProps> = ({ displayImageUrl, onStartOver, isLoading
   return (
     <div className="w-full h-full flex items-center justify-center p-4 relative animate-zoom-in group">
       {/* Control Buttons */}
-      <div className="absolute top-4 left-4 z-30">
+      <div className="absolute top-4 left-4 right-4 z-30 flex justify-between items-center">
         <button 
             onClick={onStartOver}
             className="flex items-center justify-center text-center bg-white/60 border border-gray-300/80 text-gray-700 font-semibold py-2 px-4 rounded-full transition-all duration-200 ease-in-out hover:bg-white hover:border-gray-400 active:scale-95 text-sm backdrop-blur-sm"
         >
             <RotateCcwIcon className="w-4 h-4 mr-2" />
             Start Over
+        </button>
+        <button 
+            onClick={onLogout}
+            aria-label="Log out"
+            className="flex items-center justify-center text-center bg-white/60 border border-gray-300/80 text-gray-700 font-semibold py-2 px-4 rounded-full transition-all duration-200 ease-in-out hover:bg-white hover:border-gray-400 active:scale-95 text-sm backdrop-blur-sm"
+        >
+            <LogOutIcon className="w-4 h-4 mr-2" />
+            Log Out
         </button>
       </div>
 
