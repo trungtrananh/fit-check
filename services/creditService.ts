@@ -6,7 +6,7 @@
 import { UserCredits, CREDIT_COSTS } from '../types';
 
 const STORAGE_KEY = 'user_credits';
-const INITIAL_FREE_CREDITS = 5;
+const INITIAL_FREE_CREDITS = 100;
 
 // Generate unique token for each new user
 const generateUniqueToken = (): string => {

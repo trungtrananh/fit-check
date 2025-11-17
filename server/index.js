@@ -87,7 +87,7 @@ const INITIAL_FREE_CREDITS = 100;
 const getOrCreateCredits = (token) => {
   if (!creditStore.has(token)) {
     creditStore.set(token, {
-      balance: token === 'free_trial' ? INITIAL_FREE_CREDITS : 0,
+      balance: INITIAL_FREE_CREDITS,
       createdAt: Date.now(),
     });
   }
