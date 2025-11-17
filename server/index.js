@@ -43,8 +43,17 @@ app.use(session({
 }));
 
 // Initialize Gemini AI
-const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 const model = 'gemini-2.5-flash-image';
+let ai = null;
+if (process.env.GEMINI_API_KEY) {
+  try {
+    ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+  } catch (error) {
+    console.error('Failed to initialize Google Gemini client:', error);
+  }
+} else {
+  console.warn('GEMINI_API_KEY not configured. Gemini endpoints will return 500.');
+}
 
 // Helper function to parse data URL
 const dataUrlToPart = (dataUrl) => {
@@ -481,7 +490,7 @@ app.post('/api/gemini/model-image', async (req, res) => {
   try {
     const { userImage, prompt } = req.body;
 
-    if (!process.env.GEMINI_API_KEY) {
+    if (!ai) {
       return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
     }
 
@@ -509,7 +518,7 @@ app.post('/api/gemini/virtual-tryon', async (req, res) => {
   try {
     const { modelImage, garmentImage, prompt } = req.body;
 
-    if (!process.env.GEMINI_API_KEY) {
+    if (!ai) {
       return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
     }
 
@@ -539,7 +548,7 @@ app.post('/api/gemini/pose-variation', async (req, res) => {
   try {
     const { tryOnImage, prompt } = req.body;
 
-    if (!process.env.GEMINI_API_KEY) {
+    if (!ai) {
       return res.status(500).json({ error: 'GEMINI_API_KEY not configured' });
     }
 
@@ -568,7 +577,7 @@ app.post('/api/gemini/pose-variation', async (req, res) => {
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok',
-    geminiConfigured: !!process.env.GEMINI_API_KEY 
+    geminiConfigured: !!ai 
   });
 });
 
@@ -583,7 +592,7 @@ app.get('*', (req, res) => {
 // Cloud Run requires listening on 0.0.0.0, not localhost
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
-  console.log(`Gemini API Key configured: ${!!process.env.GEMINI_API_KEY}`);
+  console.log(`Gemini API Key configured: ${!!ai}`);
   console.log(`Credit system: Simple code-based redemption (no payment gateway)`);
 });
 
