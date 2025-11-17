@@ -1,0 +1,17 @@
+{
+  "name": "fit-check-server",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Proxy server for Fit Check app",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@google/genai": "^1.10.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-session": "^1.18.2"
+  }
+}
