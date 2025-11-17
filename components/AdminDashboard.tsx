@@ -31,7 +31,7 @@ const AdminDashboard: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   
   // Form state
-  const [formCredits, setFormCredits] = useState('25');
+  const [formCredits, setFormCredits] = useState('100');
   const [formEmail, setFormEmail] = useState('');
   const [formCustomCode, setFormCustomCode] = useState('');
   const [formError, setFormError] = useState<string | null>(null);

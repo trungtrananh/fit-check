@@ -81,7 +81,7 @@ const handleApiResponse = (response) => {
 };
 
 // Credit Management APIs
-const INITIAL_FREE_CREDITS = 5;
+const INITIAL_FREE_CREDITS = 100;
 
 // Initialize or get credits for a token
 const getOrCreateCredits = (token) => {
@@ -328,7 +328,7 @@ app.get('/api/admin/list-codes', (req, res) => {
 });
 
 // Simple GET endpoint to create codes via browser (open access)
-// Usage: http://localhost:3000/api/admin/create-code?credits=25&code=WELCOME25
+// Usage: http://localhost:3000/api/admin/create-code?credits=100&code=WELCOME100
 app.get('/api/admin/create-code', (req, res) => {
   try {
     const credits = parseInt(req.query.credits, 10);
@@ -342,10 +342,10 @@ app.get('/api/admin/create-code', (req, res) => {
             <h1>❌ Lỗi: Thiếu số credits</h1>
             <p>Cách sử dụng:</p>
             <ul>
-              <li><code>http://localhost:3000/api/admin/create-code?credits=25</code></li>
-              <li><code>http://localhost:3000/api/admin/create-code?credits=50&code=WELCOME50</code></li>
+              <li><code>http://localhost:3000/api/admin/create-code?credits=100</code></li>
+              <li><code>http://localhost:3000/api/admin/create-code?credits=100&code=WELCOME100</code></li>
             </ul>
-            <p><a href="/api/admin/create-code?credits=25">Ví dụ: Tạo code 25 credits</a></p>
+            <p><a href="/api/admin/create-code?credits=100">Ví dụ: Tạo code 100 credits</a></p>
           </body>
         </html>
       `);
@@ -425,8 +425,8 @@ app.get('/api/admin/create-code', (req, res) => {
             <p class="info">📝 <strong>Hãy copy và lưu code này lại!</strong></p>
             <button onclick="navigator.clipboard.writeText('${creditCode}')">📋 Copy Code</button>
             <br><br>
-            <a href="/api/admin/create-code?credits=25">Tạo code khác (25 credits)</a> | 
-            <a href="/api/admin/create-code?credits=50">Tạo code khác (50 credits)</a> |
+            <a href="/api/admin/create-code?credits=100">Tạo code khác (100 credits)</a> | 
+            <a href="/api/admin/create-code?credits=100&code=WELCOME100">Tạo code khác (100 credits, custom)</a> |
             <a href="/admintrungta">Admin Dashboard</a>
           </div>
         </body>
