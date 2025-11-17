@@ -112,23 +112,15 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
             </div>
           </div>
 
-          {/* Credit Costs Info */}
-          <div className="p-6 bg-blue-50 border-b">
-            <h3 className="font-semibold text-gray-800 mb-2">Credit Costs:</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">2</span>
-                <span className="text-gray-700">Generate Model Photo</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="bg-purple-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">3</span>
-                <span className="text-gray-700">Virtual Try-On</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <span className="bg-pink-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">1</span>
-                <span className="text-gray-700">Change Pose</span>
-              </div>
-            </div>
+          {/* Payment Instructions */}
+          <div className="p-6 bg-yellow-50 border-b border-yellow-200">
+            <h3 className="font-semibold text-gray-900 mb-2">Hướng dẫn mua credit</h3>
+            <p className="text-gray-800 leading-relaxed">
+              Vui lòng thanh toán <strong>39.000 VNĐ</strong> để có thể sử dụng thêm <strong>100 credit</strong> thử đồ ảo mới.<br />
+              Số tài khoản nhận thanh toán: <strong>123456</strong>.<br />
+              Sau khi thanh toán thành công, vui lòng chụp lại màn hình thanh toán và gửi đến email <strong>thudo.ai@gmail.com</strong> để nhận mã code kích hoạt credit mới.<br />
+              Cảm ơn bạn! 💜
+            </p>
           </div>
 
           {/* Redeem Code Form */}
@@ -208,11 +200,23 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
               </button>
             </form>
 
-            <div className="mt-6 pt-6 border-t border-gray-200">
-              <p className="text-sm text-gray-600 text-center">
-                Don't have a code? Contact support to get credit codes.
-              </p>
+          <div className="p-6 bg-blue-50 border-t">
+            <h3 className="font-semibold text-gray-800 mb-2">Credit Costs:</h3>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">2</span>
+                <span className="text-gray-700">Generate Model Photo</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="bg-purple-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">3</span>
+                <span className="text-gray-700">Virtual Try-On</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="bg-pink-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">1</span>
+                <span className="text-gray-700">Change Pose</span>
+              </div>
             </div>
+          </div>
           </div>
         </motion.div>
       </motion.div>
