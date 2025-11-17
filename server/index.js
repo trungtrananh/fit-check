@@ -246,14 +246,6 @@ app.post('/api/credits/redeem-code', (req, res) => {
   }
 });
 
-// Admin authentication middleware
-function requireAdmin(req, res, next) {
-  if (req.session && req.session.isAdmin) {
-    return next();
-  }
-  return res.status(401).json({ error: 'Unauthorized. Admin authentication required.' });
-}
-
 // Admin API: Generate credit codes (protected)
 app.post('/api/admin/generate-code', requireAdmin, (req, res) => {
   try {
@@ -301,6 +293,14 @@ app.post('/api/admin/generate-code', requireAdmin, (req, res) => {
     res.status(500).json({ error: 'Failed to generate credit code' });
   }
 });
+
+// Admin authentication middleware
+const requireAdmin = (req, res, next) => {
+  if (req.session && req.session.isAdmin) {
+    return next();
+  }
+  return res.status(401).json({ error: 'Unauthorized. Admin authentication required.' });
+};
 
 // Admin login endpoint
 app.post('/api/admin/login', (req, res) => {
