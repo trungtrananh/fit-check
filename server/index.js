@@ -82,17 +82,73 @@ const handleApiResponse = (response) => {
 
 // Credit Management APIs
 const INITIAL_FREE_CREDITS = 100;
+const freeTrialClaims = new Map(); // Map<ip, { token: string, claimedAt: number }>
+
+const generateToken = (prefix = 'user') => {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+};
+
+const getClientIp = (req) => {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (forwarded) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.socket?.remoteAddress || req.ip || 'unknown';
+};
 
 // Initialize or get credits for a token
-const getOrCreateCredits = (token) => {
+const getOrCreateCredits = (token, initialBalance = 0) => {
   if (!creditStore.has(token)) {
     creditStore.set(token, {
-      balance: INITIAL_FREE_CREDITS,
+      balance: initialBalance,
       createdAt: Date.now(),
     });
   }
   return creditStore.get(token);
 };
+
+// Request free credits once per IP/device
+app.post('/api/credits/request-free', (req, res) => {
+  try {
+    const ip = getClientIp(req);
+
+    if (!ip) {
+      return res.status(400).json({ error: 'Unable to determine IP address' });
+    }
+
+    const existingClaim = freeTrialClaims.get(ip);
+
+    if (existingClaim) {
+      const existingCredits = getOrCreateCredits(existingClaim.token);
+      return res.status(200).json({
+        success: true,
+        token: existingClaim.token,
+        balance: existingCredits.balance,
+        alreadyClaimed: true,
+      });
+    }
+
+    const token = generateToken('free');
+    creditStore.set(token, {
+      balance: INITIAL_FREE_CREDITS,
+      createdAt: Date.now(),
+      ip,
+    });
+    freeTrialClaims.set(ip, { token, claimedAt: Date.now() });
+
+    console.log(`Granted initial free credits to IP ${ip}, token ${token}`);
+
+    res.json({
+      success: true,
+      token,
+      balance: INITIAL_FREE_CREDITS,
+      alreadyClaimed: false,
+    });
+  } catch (error) {
+    console.error('Free credit request error:', error);
+    res.status(500).json({ error: 'Failed to process free credit request' });
+  }
+});
 
 // Deduct credits API
 app.post('/api/credits/deduct', (req, res) => {

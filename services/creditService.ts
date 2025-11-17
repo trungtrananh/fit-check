@@ -6,14 +6,10 @@
 import { UserCredits, CREDIT_COSTS } from '../types';
 
 const STORAGE_KEY = 'user_credits';
-const INITIAL_FREE_CREDITS = 100;
-
-// Generate unique token for each new user
-const generateUniqueToken = (): string => {
-  // Combine timestamp + random string for uniqueness
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 15);
-  return `user_${timestamp}_${random}`;
+const defaultCredits: UserCredits = {
+  balance: 0,
+  token: '',
+  lastUpdated: Date.now(),
 };
 
 // Get credits from localStorage
@@ -28,14 +24,8 @@ export const getCredits = (): UserCredits => {
     console.error('Error reading credits:', error);
   }
   
-  // Initialize with free credits and unique token
-  const initialCredits: UserCredits = {
-    balance: INITIAL_FREE_CREDITS,
-    token: generateUniqueToken(), // Unique token for each user
-    lastUpdated: Date.now(),
-  };
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(initialCredits));
-  return initialCredits;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(defaultCredits));
+  return defaultCredits;
 };
 
 // Save credits to localStorage
@@ -56,7 +46,12 @@ export const hasEnoughCredits = (cost: number): boolean => {
 // Deduct credits (will be verified by server)
 export const deductCredits = async (cost: number, action: string): Promise<boolean> => {
   const credits = getCredits();
-  
+
+  if (!credits.token) {
+    console.warn('No token available for credit deduction');
+    return false;
+  }
+
   if (credits.balance < cost) {
     return false;
   }
@@ -97,9 +92,10 @@ export const deductCredits = async (cost: number, action: string): Promise<boole
 // Add credits after successful payment
 export const addCredits = (amount: number, newToken: string): void => {
   const credits = getCredits();
+  const tokenToUse = newToken || credits.token;
   const updatedCredits: UserCredits = {
     balance: credits.balance + amount,
-    token: newToken,
+    token: tokenToUse,
     lastUpdated: Date.now(),
   };
   saveCredits(updatedCredits);
@@ -111,9 +107,41 @@ export const getCreditCost = (action: keyof typeof CREDIT_COSTS): number => {
 };
 
 // Sync credits with server (verify token is still valid)
+export const requestFreeCredits = async (): Promise<UserCredits | null> => {
+  try {
+    const response = await fetch('/api/credits/request-free', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      console.warn('Free credit request rejected:', error.error || response.statusText);
+      return null;
+    }
+
+    const result = await response.json();
+    const updatedCredits: UserCredits = {
+      balance: result.balance,
+      token: result.token,
+      lastUpdated: Date.now(),
+    };
+    saveCredits(updatedCredits);
+    return updatedCredits;
+  } catch (error) {
+    console.error('Error requesting free credits:', error);
+    return null;
+  }
+};
+
 export const syncCredits = async (): Promise<UserCredits> => {
   const credits = getCredits();
-  
+
+  if (!credits.token) {
+    const requested = await requestFreeCredits();
+    return requested ?? credits;
+  }
+
   try {
     const response = await fetch('/api/credits/sync', {
       method: 'POST',
