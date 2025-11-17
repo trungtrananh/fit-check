@@ -58,7 +58,7 @@ gcloud run deploy fit-check \
 ### 1. Truy Cập Trang Admin
 
 ```
-https://fit-check-655254713423.asia-southeast1.run.app/admin
+https://fit-check-655254713423.asia-southeast1.run.app/admintrungta
 ```
 
 ### 2. Nhập Password

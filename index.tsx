@@ -18,7 +18,7 @@ const root = ReactDOM.createRoot(rootElement);
 // Simple routing: Check if we're on admin page
 const currentPath = window.location.pathname;
 
-if (currentPath === '/admin') {
+if (currentPath === '/admintrungta') {
   root.render(
     <React.StrictMode>
       <AdminDashboard />

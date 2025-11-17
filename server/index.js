@@ -427,7 +427,7 @@ app.get('/api/admin/create-code', (req, res) => {
             <br><br>
             <a href="/api/admin/create-code?credits=25">Tạo code khác (25 credits)</a> | 
             <a href="/api/admin/create-code?credits=50">Tạo code khác (50 credits)</a> |
-            <a href="/admin">Admin Dashboard</a>
+            <a href="/admintrungta">Admin Dashboard</a>
           </div>
         </body>
       </html>
