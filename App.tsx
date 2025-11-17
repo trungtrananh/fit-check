@@ -21,12 +21,12 @@ import BuyCreditsModal from './components/BuyCreditsModal';
 import { getCredits, deductCredits, syncCredits } from './services/creditService';
 
 const POSE_INSTRUCTIONS = [
-  "Full frontal view, hands on hips",
-  "Slightly turned, 3/4 view",
-  "Side profile view",
-  "Jumping in the air, mid-action shot",
-  "Walking towards camera",
-  "Leaning against a wall",
+  "Đứng thẳng, tay chống hông",
+  "Xoay nhẹ góc 3/4",
+  "Nhìn nghiêng từ bên hông",
+  "Nhảy lên giữa không trung",
+  "Bước về phía máy ảnh",
+  "Tựa người vào tường",
 ];
 
 const useMediaQuery = (query: string): boolean => {
@@ -135,20 +135,20 @@ const App: React.FC = () => {
     // Check credits
     const cost = CREDIT_COSTS.VIRTUAL_TRYON;
     if (credits.balance < cost) {
-      setError(`Not enough credits! You need ${cost} credits for virtual try-on.`);
+      setError(`Không đủ credit! Bạn cần ${cost} credit để thử đồ ảo.`);
       setShowBuyCreditsModal(true);
       return;
     }
 
     setError(null);
     setIsLoading(true);
-    setLoadingMessage(`Adding ${garmentInfo.name}...`);
+    setLoadingMessage(`Đang thêm ${garmentInfo.name}...`);
 
     try {
       // Deduct credits
       const success = await deductCredits(cost, 'VIRTUAL_TRYON');
       if (!success) {
-        throw new Error('Failed to process credits');
+        throw new Error('Không thể xử lý credit');
       }
 
       const newImageUrl = await generateVirtualTryOnImage(displayImageUrl, garmentFile);
@@ -177,7 +177,7 @@ const App: React.FC = () => {
         return [...prev, garmentInfo];
       });
     } catch (err) {
-      setError(getFriendlyErrorMessage(String(err), 'Failed to apply garment'));
+      setError(getFriendlyErrorMessage(String(err), 'Không thể áp dụng trang phục'));
     } finally {
       setIsLoading(false);
       setLoadingMessage('');
@@ -206,7 +206,7 @@ const App: React.FC = () => {
     // Check credits for new pose generation
     const cost = CREDIT_COSTS.POSE_VARIATION;
     if (credits.balance < cost) {
-      setError(`Not enough credits! You need ${cost} credit for pose variation.`);
+      setError(`Không đủ credit! Bạn cần ${cost} credit để đổi tư thế.`);
       setShowBuyCreditsModal(true);
       return;
     }
@@ -218,7 +218,7 @@ const App: React.FC = () => {
 
     setError(null);
     setIsLoading(true);
-    setLoadingMessage(`Changing pose...`);
+    setLoadingMessage(`Đang thay đổi tư thế...`);
     
     const prevPoseIndex = currentPoseIndex;
     // Optimistically update the pose index so the pose name changes in the UI
@@ -228,7 +228,7 @@ const App: React.FC = () => {
       // Deduct credits
       const success = await deductCredits(cost, 'POSE_VARIATION');
       if (!success) {
-        throw new Error('Failed to process credits');
+        throw new Error('Không thể xử lý credit');
       }
 
       const newImageUrl = await generatePoseVariation(baseImageForPoseChange, poseInstruction);
@@ -242,7 +242,7 @@ const App: React.FC = () => {
       // Update credits state
       setCredits(getCredits());
     } catch (err) {
-      setError(getFriendlyErrorMessage(String(err), 'Failed to change pose'));
+      setError(getFriendlyErrorMessage(String(err), 'Không thể đổi tư thế'));
       // Revert pose index on failure
       setCurrentPoseIndex(prevPoseIndex);
     } finally {

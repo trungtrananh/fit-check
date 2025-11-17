@@ -25,19 +25,19 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
     e.preventDefault();
     
     if (!code.trim()) {
-      setError('Please enter a credit code');
+      setError('Vui lòng nhập mã credit');
       return;
     }
 
     if (!email.trim()) {
-      setError('Please enter your email address');
+      setError('Vui lòng nhập email của bạn');
       return;
     }
 
     // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email.trim())) {
-      setError('Please enter a valid email address');
+      setError('Email không hợp lệ, vui lòng kiểm tra lại');
       return;
     }
 
@@ -49,7 +49,7 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
       const result = await redeemCreditCode(code, email.trim());
       
       if (result.success) {
-        setSuccess(`Successfully added ${result.creditsAdded} credits! Your new balance is ${result.newBalance} credits.`);
+            setSuccess(`Đã cộng thêm ${result.creditsAdded} credit! Số dư mới của bạn là ${result.newBalance} credit.`);
         setCode('');
         setEmail('');
         onCreditsUpdate();
@@ -59,11 +59,11 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
           setSuccess(null);
         }, 5000);
       } else {
-        setError(result.error || 'Invalid credit code');
+        setError(result.error || 'Mã credit không hợp lệ');
       }
     } catch (err) {
       console.error('Redeem code error:', err);
-      setError('Failed to redeem code. Please try again.');
+      setError('Đổi mã thất bại. Vui lòng thử lại.');
     } finally {
       setIsProcessing(false);
     }
@@ -91,8 +91,8 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
           <div className="sticky top-0 bg-gradient-to-r from-purple-600 to-blue-600 text-white p-6 rounded-t-2xl">
             <div className="flex justify-between items-center">
               <div>
-                <h2 className="text-3xl font-bold">Redeem Credit Code</h2>
-                <p className="text-purple-100 mt-1">Enter your credit code to add credits</p>
+                <h2 className="text-3xl font-bold">Nhập mã credit</h2>
+                <p className="text-purple-100 mt-1">Nhập mã được cấp để cộng thêm credit</p>
               </div>
               <button
                 onClick={onClose}
@@ -107,8 +107,8 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
             
             {/* Current Balance */}
             <div className="mt-4 bg-white/10 backdrop-blur rounded-lg p-3 inline-block">
-              <span className="text-sm text-purple-100">Current Balance:</span>
-              <span className="ml-2 text-2xl font-bold">{currentBalance} credits</span>
+              <span className="text-sm text-purple-100">Số dư hiện tại:</span>
+              <span className="ml-2 text-2xl font-bold">{currentBalance} credit</span>
             </div>
           </div>
 
@@ -128,7 +128,7 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
             <form onSubmit={handleRedeemCode} className="space-y-4">
               <div>
                 <label htmlFor="credit-code" className="block text-sm font-medium text-gray-700 mb-2">
-                  Credit Code
+                  Mã credit
                 </label>
                 <input
                   id="credit-code"
@@ -139,7 +139,7 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
                     setError(null);
                     setSuccess(null);
                   }}
-                  placeholder="Enter your code (e.g., ABC123)"
+                  placeholder="Nhập mã (ví dụ ABC123)"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-lg font-mono uppercase"
                   disabled={isProcessing}
                   autoFocus
@@ -148,7 +148,7 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
 
               <div>
                 <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                  Email Address <span className="text-red-500">*</span>
+                  Email của bạn <span className="text-red-500">*</span>
                 </label>
                 <input
                   id="email"
@@ -159,24 +159,24 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
                     setError(null);
                     setSuccess(null);
                   }}
-                  placeholder="your.email@example.com"
+                  placeholder="ban@example.com"
                   className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-base"
                   disabled={isProcessing}
                   required
                 />
-                <p className="text-xs text-gray-500 mt-1">Email is required to verify code ownership</p>
+                <p className="text-xs text-gray-500 mt-1">Email dùng để xác thực người nhận credit</p>
               </div>
 
               {error && (
                 <div className="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-md">
-                  <p className="font-semibold">Error</p>
+                  <p className="font-semibold">Có lỗi xảy ra</p>
                   <p>{error}</p>
                 </div>
               )}
 
               {success && (
                 <div className="bg-green-50 border-l-4 border-green-500 text-green-700 p-4 rounded-md">
-                  <p className="font-semibold">Success!</p>
+                  <p className="font-semibold">Thành công!</p>
                   <p>{success}</p>
                 </div>
               )}
@@ -192,28 +192,28 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Redeeming...
+                    Đang xử lý...
                   </span>
                 ) : (
-                  'Redeem Code'
+                  'Đổi mã credit'
                 )}
               </button>
             </form>
 
           <div className="p-6 bg-blue-50 border-t">
-            <h3 className="font-semibold text-gray-800 mb-2">Credit Costs:</h3>
+            <h3 className="font-semibold text-gray-800 mb-2">Chi phí credit:</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
               <div className="flex items-center gap-2">
                 <span className="bg-blue-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">2</span>
-                <span className="text-gray-700">Generate Model Photo</span>
+                <span className="text-gray-700">Tạo ảnh người mẫu</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="bg-purple-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">3</span>
-                <span className="text-gray-700">Virtual Try-On</span>
+                <span className="text-gray-700">Thử đồ ảo</span>
               </div>
               <div className="flex items-center gap-2">
                 <span className="bg-pink-500 text-white rounded-full w-6 h-6 flex items-center justify-center font-bold text-xs">1</span>
-                <span className="text-gray-700">Change Pose</span>
+                <span className="text-gray-700">Đổi tư thế</span>
               </div>
             </div>
           </div>
