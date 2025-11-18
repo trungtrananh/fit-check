@@ -117,8 +117,8 @@ const BuyCreditsModal: React.FC<BuyCreditsModalProps> = ({ isOpen, onClose, curr
             <h3 className="font-semibold text-gray-900 mb-2">Hướng dẫn mua credit</h3>
             <p className="text-gray-800 leading-relaxed">
               Vui lòng thanh toán <strong>39.000 VNĐ</strong> để có thể sử dụng thêm <strong>100 credit</strong> thử đồ ảo mới.<br />
-              Số tài khoản nhận thanh toán: <strong>123456</strong>.<br />
-              Sau khi thanh toán thành công, vui lòng chụp lại màn hình thanh toán và gửi đến email <strong>thudo.ai@gmail.com</strong> để nhận mã code kích hoạt credit mới.<br />
+              Số tài khoản nhận thanh toán: <strong>TECHCOMBANK-19028386510019-TRAN ANH TRUNG</strong>.<br />
+              Sau khi thanh toán thành công, vui lòng chụp lại màn hình thanh toán và gửi đến email <strong>lienhe.thudo@gmail.com</strong> để nhận mã code kích hoạt credit mới.<br />
               Cảm ơn bạn! 💜
             </p>
           </div>
