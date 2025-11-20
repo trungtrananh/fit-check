@@ -17,10 +17,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Persistent storage paths
-// Use /tmp on Cloud Run (writable) or local data directory for development
-const DATA_DIR = process.env.NODE_ENV === 'production' 
-  ? '/tmp/fit-check-data' 
-  : path.join(__dirname, 'data');
+// Try /tmp first (works on Cloud Run), fallback to local data directory
+const DATA_DIR = '/tmp/fit-check-data';
 const CREDITS_FILE = path.join(DATA_DIR, 'credits.json');
 const CREDIT_CODES_FILE = path.join(DATA_DIR, 'creditCodes.json');
 const FREE_TRIAL_CLAIMS_FILE = path.join(DATA_DIR, 'freeTrialClaims.json');
@@ -740,20 +738,40 @@ app.get('*', (req, res) => {
 
 // Cloud Run requires listening on 0.0.0.0, not localhost
 // Initialize data and start server
-initializeData().then(() => {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Gemini API Key configured: ${!!ai}`);
-    console.log(`Credit system: Persistent storage (file-based)`);
-    console.log(`Data directory: ${DATA_DIR}`);
-  });
-}).catch((error) => {
-  // Even if data initialization fails, start the server
-  // This allows the app to work with in-memory storage only
-  console.error('Warning: Data initialization had issues, but starting server anyway:', error.message);
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Server running on port ${PORT} (in-memory storage only)`);
-    console.log(`Gemini API Key configured: ${!!ai}`);
-  });
-});
+(async () => {
+  try {
+    console.log('🚀 Starting server initialization...');
+    console.log(`📌 PORT: ${PORT}`);
+    console.log(`📁 __dirname: ${__dirname}`);
+    console.log(`💾 DATA_DIR: ${DATA_DIR}`);
+    
+    // Initialize data (non-blocking - will continue even if it fails)
+    initializeData().catch((err) => {
+      console.warn('⚠️ Data initialization warning (non-fatal):', err.message);
+    });
+    
+    // Start server immediately
+    const server = app.listen(PORT, '0.0.0.0', () => {
+      console.log(`✅ Server successfully started on port ${PORT}`);
+      console.log(`🔑 Gemini API Key configured: ${!!ai}`);
+      console.log(`💳 Credit system: File-based storage with in-memory fallback`);
+      console.log(`📂 Data directory: ${DATA_DIR}`);
+    });
+    
+    // Handle server errors
+    server.on('error', (err) => {
+      console.error('❌ Server error:', err);
+      if (err.code === 'EADDRINUSE') {
+        console.error(`Port ${PORT} is already in use`);
+      }
+      process.exit(1);
+    });
+    
+  } catch (error) {
+    // Fatal error - log and exit
+    console.error('❌ Fatal error during server startup:', error);
+    console.error('Error stack:', error.stack);
+    process.exit(1);
+  }
+})();
 
