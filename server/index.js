@@ -514,7 +514,7 @@ app.post('/api/credits/redeem-code', async (req, res) => {
 });
 
 // Admin API: Generate credit codes (open access)
-app.post('/api/admin/generate-code', (req, res) => {
+app.post('/api/admin/generate-code', async (req, res) => {
   try {
     const { credits, code, email } = req.body;
     
@@ -612,7 +612,7 @@ app.get('/api/admin/list-codes', (req, res) => {
 
 // Simple GET endpoint to create codes via browser (open access)
 // Usage: http://localhost:3000/api/admin/create-code?credits=100&code=WELCOME100
-app.get('/api/admin/create-code', (req, res) => {
+app.get('/api/admin/create-code', async (req, res) => {
   try {
     const credits = parseInt(req.query.credits, 10);
     const code = req.query.code;
