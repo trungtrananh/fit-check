@@ -6,8 +6,10 @@
 import { UserCredits, CREDIT_COSTS } from '../types';
 
 const STORAGE_KEY = 'user_credits';
+const INITIAL_DISPLAY_CREDITS = 100;
+
 const defaultCredits: UserCredits = {
-  balance: 0,
+  balance: INITIAL_DISPLAY_CREDITS,
   token: '',
   lastUpdated: Date.now(),
 };
