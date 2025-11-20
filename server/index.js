@@ -18,20 +18,30 @@ const PORT = process.env.PORT || 3000;
 // Initialize Firestore (will use default credentials on Cloud Run)
 let db = null;
 let useFirestore = false;
+let firestoreInitialized = false;
 
-// Initialize Firestore synchronously (non-blocking, will test on first use)
-try {
-  db = new Firestore({
-    // Use default credentials on Cloud Run
-    // This will work automatically on Cloud Run with default service account
-  });
-  useFirestore = true;
-  console.log('✅ Firestore instance created (will test connection on first use)');
-} catch (error) {
-  console.warn('⚠️ Firestore initialization failed, using in-memory storage only:', error.message);
-  useFirestore = false;
-  db = null;
-}
+// Lazy initialize Firestore (only when needed, non-blocking)
+const getFirestore = () => {
+  if (firestoreInitialized) {
+    return { db, useFirestore };
+  }
+  
+  firestoreInitialized = true;
+  try {
+    db = new Firestore({
+      // Use default credentials on Cloud Run
+      // This will work automatically on Cloud Run with default service account
+    });
+    useFirestore = true;
+    console.log('✅ Firestore instance created');
+  } catch (error) {
+    console.warn('⚠️ Firestore initialization failed, using in-memory storage only:', error.message);
+    useFirestore = false;
+    db = null;
+  }
+  
+  return { db, useFirestore };
+};
 
 // In-memory cache (synced with Firestore)
 const creditStore = new Map();
@@ -47,9 +57,10 @@ const COLLECTIONS = {
 
 // Load credits from Firestore
 const loadCredits = async () => {
-  if (!useFirestore || !db) return;
+  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
+  if (!canUseFirestore || !firestoreDb) return;
   try {
-    const snapshot = await db.collection(COLLECTIONS.CREDITS).get();
+    const snapshot = await firestoreDb.collection(COLLECTIONS.CREDITS).get();
     creditStore.clear();
     snapshot.forEach(doc => {
       creditStore.set(doc.id, doc.data());
@@ -63,11 +74,12 @@ const loadCredits = async () => {
 
 // Save credits to Firestore
 const saveCredits = async () => {
-  if (!useFirestore || !db) return;
+  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
+  if (!canUseFirestore || !firestoreDb) return;
   try {
-    const batch = db.batch();
+    const batch = firestoreDb.batch();
     creditStore.forEach((data, token) => {
-      const ref = db.collection(COLLECTIONS.CREDITS).doc(token);
+      const ref = firestoreDb.collection(COLLECTIONS.CREDITS).doc(token);
       batch.set(ref, data);
     });
     await batch.commit();
@@ -79,9 +91,10 @@ const saveCredits = async () => {
 
 // Save single credit to Firestore
 const saveCredit = async (token, data) => {
-  if (!useFirestore || !db) return;
+  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
+  if (!canUseFirestore || !firestoreDb) return;
   try {
-    await db.collection(COLLECTIONS.CREDITS).doc(token).set(data);
+    await firestoreDb.collection(COLLECTIONS.CREDITS).doc(token).set(data);
   } catch (error) {
     console.error('Error saving credit to Firestore:', error);
   }
@@ -89,9 +102,10 @@ const saveCredit = async (token, data) => {
 
 // Load credit codes from Firestore
 const loadCreditCodes = async () => {
-  if (!useFirestore || !db) return;
+  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
+  if (!canUseFirestore || !firestoreDb) return;
   try {
-    const snapshot = await db.collection(COLLECTIONS.CREDIT_CODES).get();
+    const snapshot = await firestoreDb.collection(COLLECTIONS.CREDIT_CODES).get();
     creditCodes.clear();
     snapshot.forEach(doc => {
       creditCodes.set(doc.id, doc.data());
@@ -105,11 +119,12 @@ const loadCreditCodes = async () => {
 
 // Save credit codes to Firestore
 const saveCreditCodes = async () => {
-  if (!useFirestore || !db) return;
+  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
+  if (!canUseFirestore || !firestoreDb) return;
   try {
-    const batch = db.batch();
+    const batch = firestoreDb.batch();
     creditCodes.forEach((data, code) => {
-      const ref = db.collection(COLLECTIONS.CREDIT_CODES).doc(code);
+      const ref = firestoreDb.collection(COLLECTIONS.CREDIT_CODES).doc(code);
       batch.set(ref, data);
     });
     await batch.commit();
@@ -120,9 +135,10 @@ const saveCreditCodes = async () => {
 
 // Save single credit code to Firestore
 const saveCreditCode = async (code, data) => {
-  if (!useFirestore || !db) return;
+  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
+  if (!canUseFirestore || !firestoreDb) return;
   try {
-    await db.collection(COLLECTIONS.CREDIT_CODES).doc(code).set(data);
+    await firestoreDb.collection(COLLECTIONS.CREDIT_CODES).doc(code).set(data);
   } catch (error) {
     console.error('Error saving credit code to Firestore:', error);
   }
@@ -130,9 +146,10 @@ const saveCreditCode = async (code, data) => {
 
 // Load free trial claims from Firestore
 const loadFreeTrialClaims = async () => {
-  if (!useFirestore || !db) return;
+  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
+  if (!canUseFirestore || !firestoreDb) return;
   try {
-    const snapshot = await db.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).get();
+    const snapshot = await firestoreDb.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).get();
     freeTrialClaims.clear();
     snapshot.forEach(doc => {
       freeTrialClaims.set(doc.id, doc.data());
@@ -146,11 +163,12 @@ const loadFreeTrialClaims = async () => {
 
 // Save free trial claims to Firestore
 const saveFreeTrialClaims = async () => {
-  if (!useFirestore || !db) return;
+  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
+  if (!canUseFirestore || !firestoreDb) return;
   try {
-    const batch = db.batch();
+    const batch = firestoreDb.batch();
     freeTrialClaims.forEach((data, ip) => {
-      const ref = db.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).doc(ip);
+      const ref = firestoreDb.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).doc(ip);
       batch.set(ref, data);
     });
     await batch.commit();
@@ -161,9 +179,10 @@ const saveFreeTrialClaims = async () => {
 
 // Save single free trial claim to Firestore
 const saveFreeTrialClaim = async (ip, data) => {
-  if (!useFirestore || !db) return;
+  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
+  if (!canUseFirestore || !firestoreDb) return;
   try {
-    await db.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).doc(ip).set(data);
+    await firestoreDb.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).doc(ip).set(data);
   } catch (error) {
     console.error('Error saving free trial claim to Firestore:', error);
   }
@@ -172,7 +191,8 @@ const saveFreeTrialClaim = async (ip, data) => {
 // Initialize data on startup
 const initializeData = async () => {
   try {
-    if (useFirestore) {
+    const { useFirestore: canUseFirestore } = getFirestore();
+    if (canUseFirestore) {
       await loadCredits();
       await loadCreditCodes();
       await loadFreeTrialClaims();
@@ -791,7 +811,6 @@ app.get('*', (req, res) => {
     console.log('🚀 Starting server initialization...');
     console.log(`📌 PORT: ${PORT}`);
     console.log(`📁 __dirname: ${__dirname}`);
-    console.log(`💾 Storage: ${useFirestore ? 'Firestore' : 'In-memory only'}`);
     
     // Initialize data (non-blocking - will continue even if it fails)
     initializeData().catch((err) => {
@@ -800,9 +819,10 @@ app.get('*', (req, res) => {
     
     // Start server immediately
     const server = app.listen(PORT, '0.0.0.0', () => {
+      const { useFirestore: canUseFirestore } = getFirestore();
       console.log(`✅ Server successfully started on port ${PORT}`);
       console.log(`🔑 Gemini API Key configured: ${!!ai}`);
-      console.log(`💳 Credit system: ${useFirestore ? 'Firestore with in-memory cache' : 'In-memory only (Firestore not available)'}`);
+      console.log(`💳 Credit system: ${canUseFirestore ? 'Firestore with in-memory cache' : 'In-memory only (Firestore not available)'}`);
     });
     
     // Handle server errors
