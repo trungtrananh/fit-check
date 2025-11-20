@@ -4,7 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { Firestore } from '@google-cloud/firestore';
+import { Storage } from '@google-cloud/storage';
 
 dotenv.config();
 
@@ -15,194 +15,218 @@ const app = express();
 // Cloud Run sets PORT automatically, default to 3000 for local development
 const PORT = process.env.PORT || 3000;
 
-// Initialize Firestore (will use default credentials on Cloud Run)
-let db = null;
-let useFirestore = false;
-let firestoreInitialized = false;
+// Cloud Storage configuration
+const BUCKET_NAME = process.env.GCS_BUCKET_NAME || 'fit-check-data';
+const STORAGE_FOLDER = 'credits-data';
 
-// Lazy initialize Firestore (only when needed, non-blocking)
-const getFirestore = () => {
-  if (firestoreInitialized) {
-    return { db, useFirestore };
+// Initialize Cloud Storage (will use default credentials on Cloud Run)
+let storage = null;
+let bucket = null;
+let useCloudStorage = false;
+let storageInitialized = false;
+
+// Lazy initialize Cloud Storage (only when needed, non-blocking)
+const getCloudStorage = () => {
+  if (storageInitialized) {
+    return { bucket, useCloudStorage };
   }
   
-  firestoreInitialized = true;
+  storageInitialized = true;
   try {
-    db = new Firestore({
+    storage = new Storage({
       // Use default credentials on Cloud Run
       // This will work automatically on Cloud Run with default service account
     });
-    useFirestore = true;
-    console.log('✅ Firestore instance created');
+    bucket = storage.bucket(BUCKET_NAME);
+    useCloudStorage = true;
+    console.log(`✅ Cloud Storage initialized (bucket: ${BUCKET_NAME})`);
   } catch (error) {
-    console.warn('⚠️ Firestore initialization failed, using in-memory storage only:', error.message);
-    useFirestore = false;
-    db = null;
+    console.warn('⚠️ Cloud Storage initialization failed, using in-memory storage only:', error.message);
+    useCloudStorage = false;
+    bucket = null;
   }
   
-  return { db, useFirestore };
+  return { bucket, useCloudStorage };
 };
 
-// In-memory cache (synced with Firestore)
+// In-memory cache (synced with Cloud Storage)
 const creditStore = new Map();
 const creditCodes = new Map();
 const freeTrialClaims = new Map();
 
-// Firestore collection names
-const COLLECTIONS = {
-  CREDITS: 'credits',
-  CREDIT_CODES: 'creditCodes',
-  FREE_TRIAL_CLAIMS: 'freeTrialClaims'
+// Cloud Storage file paths
+const STORAGE_FILES = {
+  CREDITS: `${STORAGE_FOLDER}/credits.json`,
+  CREDIT_CODES: `${STORAGE_FOLDER}/creditCodes.json`,
+  FREE_TRIAL_CLAIMS: `${STORAGE_FOLDER}/freeTrialClaims.json`
 };
 
-// Load credits from Firestore
+// Load credits from Cloud Storage
 const loadCredits = async () => {
-  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
-  if (!canUseFirestore || !firestoreDb) return;
+  const { bucket: storageBucket, useCloudStorage: canUseStorage } = getCloudStorage();
+  if (!canUseStorage || !storageBucket) return;
   try {
-    const snapshot = await firestoreDb.collection(COLLECTIONS.CREDITS).get();
+    const file = storageBucket.file(STORAGE_FILES.CREDITS);
+    const [exists] = await file.exists();
+    if (!exists) {
+      console.log('Credits file does not exist yet, starting fresh');
+      return;
+    }
+    const [contents] = await file.download();
+    const credits = JSON.parse(contents.toString());
     creditStore.clear();
-    snapshot.forEach(doc => {
-      creditStore.set(doc.id, doc.data());
+    Object.entries(credits).forEach(([token, creditData]) => {
+      creditStore.set(token, creditData);
     });
-    console.log(`✅ Loaded ${creditStore.size} credit records from Firestore`);
+    console.log(`✅ Loaded ${creditStore.size} credit records from Cloud Storage`);
   } catch (error) {
-    console.error('Error loading credits from Firestore:', error);
-    useFirestore = false; // Fallback to in-memory
+    console.error('Error loading credits from Cloud Storage:', error);
+    useCloudStorage = false; // Fallback to in-memory
   }
 };
 
-// Save credits to Firestore
+// Save credits to Cloud Storage
 const saveCredits = async () => {
-  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
-  if (!canUseFirestore || !firestoreDb) return;
+  const { bucket: storageBucket, useCloudStorage: canUseStorage } = getCloudStorage();
+  if (!canUseStorage || !storageBucket) return;
   try {
-    const batch = firestoreDb.batch();
-    creditStore.forEach((data, token) => {
-      const ref = firestoreDb.collection(COLLECTIONS.CREDITS).doc(token);
-      batch.set(ref, data);
+    const credits = Object.fromEntries(creditStore);
+    const file = storageBucket.file(STORAGE_FILES.CREDITS);
+    await file.save(JSON.stringify(credits, null, 2), {
+      contentType: 'application/json',
+      metadata: {
+        cacheControl: 'no-cache',
+      },
     });
-    await batch.commit();
   } catch (error) {
-    console.error('Error saving credits to Firestore:', error);
+    console.error('Error saving credits to Cloud Storage:', error);
     // Continue with in-memory storage
   }
 };
 
-// Save single credit to Firestore
+// Save single credit to Cloud Storage
 const saveCredit = async (token, data) => {
-  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
-  if (!canUseFirestore || !firestoreDb) return;
-  try {
-    await firestoreDb.collection(COLLECTIONS.CREDITS).doc(token).set(data);
-  } catch (error) {
-    console.error('Error saving credit to Firestore:', error);
-  }
+  // Update in-memory first
+  creditStore.set(token, data);
+  // Then save all to Cloud Storage
+  await saveCredits();
 };
 
-// Load credit codes from Firestore
+// Load credit codes from Cloud Storage
 const loadCreditCodes = async () => {
-  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
-  if (!canUseFirestore || !firestoreDb) return;
+  const { bucket: storageBucket, useCloudStorage: canUseStorage } = getCloudStorage();
+  if (!canUseStorage || !storageBucket) return;
   try {
-    const snapshot = await firestoreDb.collection(COLLECTIONS.CREDIT_CODES).get();
+    const file = storageBucket.file(STORAGE_FILES.CREDIT_CODES);
+    const [exists] = await file.exists();
+    if (!exists) {
+      console.log('Credit codes file does not exist yet, starting fresh');
+      return;
+    }
+    const [contents] = await file.download();
+    const codes = JSON.parse(contents.toString());
     creditCodes.clear();
-    snapshot.forEach(doc => {
-      creditCodes.set(doc.id, doc.data());
+    Object.entries(codes).forEach(([code, codeData]) => {
+      creditCodes.set(code, codeData);
     });
-    console.log(`✅ Loaded ${creditCodes.size} credit codes from Firestore`);
+    console.log(`✅ Loaded ${creditCodes.size} credit codes from Cloud Storage`);
   } catch (error) {
-    console.error('Error loading credit codes from Firestore:', error);
-    useFirestore = false;
+    console.error('Error loading credit codes from Cloud Storage:', error);
+    useCloudStorage = false;
   }
 };
 
-// Save credit codes to Firestore
+// Save credit codes to Cloud Storage
 const saveCreditCodes = async () => {
-  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
-  if (!canUseFirestore || !firestoreDb) return;
+  const { bucket: storageBucket, useCloudStorage: canUseStorage } = getCloudStorage();
+  if (!canUseStorage || !storageBucket) return;
   try {
-    const batch = firestoreDb.batch();
-    creditCodes.forEach((data, code) => {
-      const ref = firestoreDb.collection(COLLECTIONS.CREDIT_CODES).doc(code);
-      batch.set(ref, data);
+    const codes = Object.fromEntries(creditCodes);
+    const file = storageBucket.file(STORAGE_FILES.CREDIT_CODES);
+    await file.save(JSON.stringify(codes, null, 2), {
+      contentType: 'application/json',
+      metadata: {
+        cacheControl: 'no-cache',
+      },
     });
-    await batch.commit();
   } catch (error) {
-    console.error('Error saving credit codes to Firestore:', error);
+    console.error('Error saving credit codes to Cloud Storage:', error);
   }
 };
 
-// Save single credit code to Firestore
+// Save single credit code to Cloud Storage
 const saveCreditCode = async (code, data) => {
-  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
-  if (!canUseFirestore || !firestoreDb) return;
-  try {
-    await firestoreDb.collection(COLLECTIONS.CREDIT_CODES).doc(code).set(data);
-  } catch (error) {
-    console.error('Error saving credit code to Firestore:', error);
-  }
+  // Update in-memory first
+  creditCodes.set(code, data);
+  // Then save all to Cloud Storage
+  await saveCreditCodes();
 };
 
-// Load free trial claims from Firestore
+// Load free trial claims from Cloud Storage
 const loadFreeTrialClaims = async () => {
-  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
-  if (!canUseFirestore || !firestoreDb) return;
+  const { bucket: storageBucket, useCloudStorage: canUseStorage } = getCloudStorage();
+  if (!canUseStorage || !storageBucket) return;
   try {
-    const snapshot = await firestoreDb.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).get();
+    const file = storageBucket.file(STORAGE_FILES.FREE_TRIAL_CLAIMS);
+    const [exists] = await file.exists();
+    if (!exists) {
+      console.log('Free trial claims file does not exist yet, starting fresh');
+      return;
+    }
+    const [contents] = await file.download();
+    const claims = JSON.parse(contents.toString());
     freeTrialClaims.clear();
-    snapshot.forEach(doc => {
-      freeTrialClaims.set(doc.id, doc.data());
+    Object.entries(claims).forEach(([ip, claimData]) => {
+      freeTrialClaims.set(ip, claimData);
     });
-    console.log(`✅ Loaded ${freeTrialClaims.size} free trial claims from Firestore`);
+    console.log(`✅ Loaded ${freeTrialClaims.size} free trial claims from Cloud Storage`);
   } catch (error) {
-    console.error('Error loading free trial claims from Firestore:', error);
-    useFirestore = false;
+    console.error('Error loading free trial claims from Cloud Storage:', error);
+    useCloudStorage = false;
   }
 };
 
-// Save free trial claims to Firestore
+// Save free trial claims to Cloud Storage
 const saveFreeTrialClaims = async () => {
-  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
-  if (!canUseFirestore || !firestoreDb) return;
+  const { bucket: storageBucket, useCloudStorage: canUseStorage } = getCloudStorage();
+  if (!canUseStorage || !storageBucket) return;
   try {
-    const batch = firestoreDb.batch();
-    freeTrialClaims.forEach((data, ip) => {
-      const ref = firestoreDb.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).doc(ip);
-      batch.set(ref, data);
+    const claims = Object.fromEntries(freeTrialClaims);
+    const file = storageBucket.file(STORAGE_FILES.FREE_TRIAL_CLAIMS);
+    await file.save(JSON.stringify(claims, null, 2), {
+      contentType: 'application/json',
+      metadata: {
+        cacheControl: 'no-cache',
+      },
     });
-    await batch.commit();
   } catch (error) {
-    console.error('Error saving free trial claims to Firestore:', error);
+    console.error('Error saving free trial claims to Cloud Storage:', error);
   }
 };
 
-// Save single free trial claim to Firestore
+// Save single free trial claim to Cloud Storage
 const saveFreeTrialClaim = async (ip, data) => {
-  const { db: firestoreDb, useFirestore: canUseFirestore } = getFirestore();
-  if (!canUseFirestore || !firestoreDb) return;
-  try {
-    await firestoreDb.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).doc(ip).set(data);
-  } catch (error) {
-    console.error('Error saving free trial claim to Firestore:', error);
-  }
+  // Update in-memory first
+  freeTrialClaims.set(ip, data);
+  // Then save all to Cloud Storage
+  await saveFreeTrialClaims();
 };
 
 // Initialize data on startup
 const initializeData = async () => {
   try {
-    const { useFirestore: canUseFirestore } = getFirestore();
-    if (canUseFirestore) {
+    const { useCloudStorage: canUseStorage } = getCloudStorage();
+    if (canUseStorage) {
       await loadCredits();
       await loadCreditCodes();
       await loadFreeTrialClaims();
-      console.log('✅ Data initialization from Firestore completed');
+      console.log('✅ Data initialization from Cloud Storage completed');
     } else {
-      console.log('⚠️ Using in-memory storage only (Firestore not available)');
+      console.log('⚠️ Using in-memory storage only (Cloud Storage not available)');
     }
   } catch (error) {
     console.warn('⚠️ Data initialization warning (non-fatal):', error.message);
-    useFirestore = false; // Fallback to in-memory
+    useCloudStorage = false; // Fallback to in-memory
   }
 };
 
@@ -819,10 +843,10 @@ app.get('*', (req, res) => {
     
     // Start server immediately
     const server = app.listen(PORT, '0.0.0.0', () => {
-      const { useFirestore: canUseFirestore } = getFirestore();
+      const { useCloudStorage: canUseStorage } = getCloudStorage();
       console.log(`✅ Server successfully started on port ${PORT}`);
       console.log(`🔑 Gemini API Key configured: ${!!ai}`);
-      console.log(`💳 Credit system: ${canUseFirestore ? 'Firestore with in-memory cache' : 'In-memory only (Firestore not available)'}`);
+      console.log(`💳 Credit system: ${canUseStorage ? 'Cloud Storage with in-memory cache' : 'In-memory only (Cloud Storage not available)'}`);
     });
     
     // Handle server errors
