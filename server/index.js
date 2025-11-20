@@ -4,6 +4,8 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Modality } from '@google/genai';
+import { readFile, writeFile, mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
 
 dotenv.config();
 
@@ -14,12 +16,121 @@ const app = express();
 // Cloud Run sets PORT automatically, default to 3000 for local development
 const PORT = process.env.PORT || 3000;
 
-// In-memory credit store (in production, use a database)
+// Persistent storage paths
+const DATA_DIR = path.join(__dirname, 'data');
+const CREDITS_FILE = path.join(DATA_DIR, 'credits.json');
+const CREDIT_CODES_FILE = path.join(DATA_DIR, 'creditCodes.json');
+const FREE_TRIAL_CLAIMS_FILE = path.join(DATA_DIR, 'freeTrialClaims.json');
+
+// In-memory credit store (synced with file)
 const creditStore = new Map();
 
-// Simple credit codes for adding credits (in production, use a database)
+// Simple credit codes for adding credits (synced with file)
 // Format: { code: string, credits: number, used: boolean }
 const creditCodes = new Map();
+
+// Free trial claims (synced with file)
+const freeTrialClaims = new Map();
+
+// Ensure data directory exists
+const ensureDataDir = async () => {
+  if (!existsSync(DATA_DIR)) {
+    await mkdir(DATA_DIR, { recursive: true });
+    console.log('Created data directory:', DATA_DIR);
+  }
+};
+
+// Load credits from file
+const loadCredits = async () => {
+  try {
+    if (existsSync(CREDITS_FILE)) {
+      const data = await readFile(CREDITS_FILE, 'utf-8');
+      const credits = JSON.parse(data);
+      creditStore.clear();
+      Object.entries(credits).forEach(([token, creditData]) => {
+        creditStore.set(token, creditData);
+      });
+      console.log(`Loaded ${creditStore.size} credit records from file`);
+    }
+  } catch (error) {
+    console.error('Error loading credits:', error);
+  }
+};
+
+// Save credits to file
+const saveCredits = async () => {
+  try {
+    await ensureDataDir();
+    const credits = Object.fromEntries(creditStore);
+    await writeFile(CREDITS_FILE, JSON.stringify(credits, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('Error saving credits:', error);
+  }
+};
+
+// Load credit codes from file
+const loadCreditCodes = async () => {
+  try {
+    if (existsSync(CREDIT_CODES_FILE)) {
+      const data = await readFile(CREDIT_CODES_FILE, 'utf-8');
+      const codes = JSON.parse(data);
+      creditCodes.clear();
+      Object.entries(codes).forEach(([code, codeData]) => {
+        creditCodes.set(code, codeData);
+      });
+      console.log(`Loaded ${creditCodes.size} credit codes from file`);
+    }
+  } catch (error) {
+    console.error('Error loading credit codes:', error);
+  }
+};
+
+// Save credit codes to file
+const saveCreditCodes = async () => {
+  try {
+    await ensureDataDir();
+    const codes = Object.fromEntries(creditCodes);
+    await writeFile(CREDIT_CODES_FILE, JSON.stringify(codes, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('Error saving credit codes:', error);
+  }
+};
+
+// Load free trial claims from file
+const loadFreeTrialClaims = async () => {
+  try {
+    if (existsSync(FREE_TRIAL_CLAIMS_FILE)) {
+      const data = await readFile(FREE_TRIAL_CLAIMS_FILE, 'utf-8');
+      const claims = JSON.parse(data);
+      freeTrialClaims.clear();
+      Object.entries(claims).forEach(([ip, claimData]) => {
+        freeTrialClaims.set(ip, claimData);
+      });
+      console.log(`Loaded ${freeTrialClaims.size} free trial claims from file`);
+    }
+  } catch (error) {
+    console.error('Error loading free trial claims:', error);
+  }
+};
+
+// Save free trial claims to file
+const saveFreeTrialClaims = async () => {
+  try {
+    await ensureDataDir();
+    const claims = Object.fromEntries(freeTrialClaims);
+    await writeFile(FREE_TRIAL_CLAIMS_FILE, JSON.stringify(claims, null, 2), 'utf-8');
+  } catch (error) {
+    console.error('Error saving free trial claims:', error);
+  }
+};
+
+// Initialize data on startup
+const initializeData = async () => {
+  await ensureDataDir();
+  await loadCredits();
+  await loadCreditCodes();
+  await loadFreeTrialClaims();
+};
 
 // Middleware
 app.use(cors({
@@ -82,7 +193,6 @@ const handleApiResponse = (response) => {
 
 // Credit Management APIs
 const INITIAL_FREE_CREDITS = 100;
-const freeTrialClaims = new Map(); // Map<ip, { token: string, claimedAt: number }>
 
 const generateToken = (prefix = 'user') => {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
@@ -97,18 +207,19 @@ const getClientIp = (req) => {
 };
 
 // Initialize or get credits for a token
-const getOrCreateCredits = (token, initialBalance = 0) => {
+const getOrCreateCredits = async (token, initialBalance = 0) => {
   if (!creditStore.has(token)) {
     creditStore.set(token, {
       balance: initialBalance,
       createdAt: Date.now(),
     });
+    await saveCredits();
   }
   return creditStore.get(token);
 };
 
 // Request free credits once per IP/device
-app.post('/api/credits/request-free', (req, res) => {
+app.post('/api/credits/request-free', async (req, res) => {
   try {
     const ip = getClientIp(req);
 
@@ -119,7 +230,7 @@ app.post('/api/credits/request-free', (req, res) => {
     const existingClaim = freeTrialClaims.get(ip);
 
     if (existingClaim) {
-      const existingCredits = getOrCreateCredits(existingClaim.token);
+      const existingCredits = await getOrCreateCredits(existingClaim.token);
       return res.status(200).json({
         success: true,
         token: existingClaim.token,
@@ -136,6 +247,9 @@ app.post('/api/credits/request-free', (req, res) => {
     });
     freeTrialClaims.set(ip, { token, claimedAt: Date.now() });
 
+    // Save to file
+    await Promise.all([saveCredits(), saveFreeTrialClaims()]);
+
     console.log(`Granted initial free credits to IP ${ip}, token ${token}`);
 
     res.json({
@@ -151,7 +265,7 @@ app.post('/api/credits/request-free', (req, res) => {
 });
 
 // Deduct credits API
-app.post('/api/credits/deduct', (req, res) => {
+app.post('/api/credits/deduct', async (req, res) => {
   try {
     const { amount, token, action } = req.body;
     
@@ -159,7 +273,7 @@ app.post('/api/credits/deduct', (req, res) => {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const credits = getOrCreateCredits(token);
+    const credits = await getOrCreateCredits(token);
     
     if (credits.balance < amount) {
       return res.status(402).json({ 
@@ -170,6 +284,7 @@ app.post('/api/credits/deduct', (req, res) => {
 
     credits.balance -= amount;
     creditStore.set(token, credits);
+    await saveCredits();
 
     console.log(`Deducted ${amount} credits for ${action}. New balance: ${credits.balance}`);
 
@@ -185,7 +300,7 @@ app.post('/api/credits/deduct', (req, res) => {
 });
 
 // Sync credits API
-app.post('/api/credits/sync', (req, res) => {
+app.post('/api/credits/sync', async (req, res) => {
   try {
     const { token } = req.body;
     
@@ -193,7 +308,7 @@ app.post('/api/credits/sync', (req, res) => {
       return res.status(400).json({ error: 'Missing token' });
     }
 
-    const credits = getOrCreateCredits(token);
+    const credits = await getOrCreateCredits(token);
 
     res.json({
       balance: credits.balance,
@@ -207,7 +322,7 @@ app.post('/api/credits/sync', (req, res) => {
 
 // Simple Credit Code System
 // Admin can generate codes to add credits
-app.post('/api/credits/redeem-code', (req, res) => {
+app.post('/api/credits/redeem-code', async (req, res) => {
   try {
     const { code, token, email } = req.body;
     
@@ -262,7 +377,7 @@ app.post('/api/credits/redeem-code', (req, res) => {
     }
 
     // Add credits to user account
-    const userCredits = getOrCreateCredits(token);
+    const userCredits = await getOrCreateCredits(token);
     userCredits.balance += creditCode.credits;
     creditStore.set(token, userCredits);
 
@@ -274,6 +389,9 @@ app.post('/api/credits/redeem-code', (req, res) => {
       creditCode.usedAt = Date.now();
       creditCodes.set(originalCodeKey, creditCode);
     }
+
+    // Save to file
+    await Promise.all([saveCredits(), saveCreditCodes()]);
 
     console.log(`✅ Successfully redeemed code ${normalizedCode} for ${creditCode.credits} credits. Email: ${normalizedEmail}. Token: ${token}. New balance: ${userCredits.balance}`);
 
@@ -321,6 +439,8 @@ app.post('/api/admin/generate-code', (req, res) => {
       used: false,
       createdAt: Date.now(),
     });
+
+    await saveCreditCodes();
 
     console.log(`✅ Generated credit code: ${creditCode} for ${credits} credits${email ? ` (restricted to: ${email})` : ''}`);
     console.log(`Total codes in memory: ${creditCodes.size}`);
@@ -451,6 +571,8 @@ app.get('/api/admin/create-code', (req, res) => {
       used: false,
       createdAt: Date.now(),
     });
+
+    await saveCreditCodes();
 
     console.log(`✅ Generated credit code: ${creditCode} for ${credits} credits${email ? ` (restricted to: ${email})` : ''}`);
     console.log(`Total codes in memory: ${creditCodes.size}`);
@@ -599,9 +721,16 @@ app.get('*', (req, res) => {
 });
 
 // Cloud Run requires listening on 0.0.0.0, not localhost
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Gemini API Key configured: ${!!ai}`);
-  console.log(`Credit system: Simple code-based redemption (no payment gateway)`);
+// Initialize data and start server
+initializeData().then(() => {
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Gemini API Key configured: ${!!ai}`);
+    console.log(`Credit system: Persistent storage (file-based)`);
+    console.log(`Data directory: ${DATA_DIR}`);
+  });
+}).catch((error) => {
+  console.error('Failed to initialize data:', error);
+  process.exit(1);
 });
 
