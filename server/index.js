@@ -4,8 +4,7 @@ import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { GoogleGenAI, Modality } from '@google/genai';
-import { readFile, writeFile, mkdir } from 'fs/promises';
-import { existsSync } from 'fs';
+import { Firestore } from '@google-cloud/firestore';
 
 dotenv.config();
 
@@ -16,135 +15,168 @@ const app = express();
 // Cloud Run sets PORT automatically, default to 3000 for local development
 const PORT = process.env.PORT || 3000;
 
-// Persistent storage paths
-// Try /tmp first (works on Cloud Run), fallback to local data directory
-const DATA_DIR = '/tmp/fit-check-data';
-const CREDITS_FILE = path.join(DATA_DIR, 'credits.json');
-const CREDIT_CODES_FILE = path.join(DATA_DIR, 'creditCodes.json');
-const FREE_TRIAL_CLAIMS_FILE = path.join(DATA_DIR, 'freeTrialClaims.json');
+// Initialize Firestore (will use default credentials on Cloud Run)
+let db = null;
+let useFirestore = false;
+try {
+  db = new Firestore();
+  useFirestore = true;
+  console.log('✅ Firestore initialized successfully');
+} catch (error) {
+  console.warn('⚠️ Firestore initialization failed, using in-memory storage only:', error.message);
+  useFirestore = false;
+}
 
-// In-memory credit store (synced with file)
+// In-memory cache (synced with Firestore)
 const creditStore = new Map();
-
-// Simple credit codes for adding credits (synced with file)
-// Format: { code: string, credits: number, used: boolean }
 const creditCodes = new Map();
-
-// Free trial claims (synced with file)
 const freeTrialClaims = new Map();
 
-// Ensure data directory exists
-const ensureDataDir = async () => {
-  try {
-    if (!existsSync(DATA_DIR)) {
-      await mkdir(DATA_DIR, { recursive: true });
-      console.log('Created data directory:', DATA_DIR);
-    }
-  } catch (error) {
-    console.warn('Warning: Could not create data directory:', error.message);
-    console.warn('Falling back to in-memory storage only');
-    throw error; // Re-throw to indicate failure
-  }
+// Firestore collection names
+const COLLECTIONS = {
+  CREDITS: 'credits',
+  CREDIT_CODES: 'creditCodes',
+  FREE_TRIAL_CLAIMS: 'freeTrialClaims'
 };
 
-// Load credits from file
+// Load credits from Firestore
 const loadCredits = async () => {
+  if (!useFirestore) return;
   try {
-    if (existsSync(CREDITS_FILE)) {
-      const data = await readFile(CREDITS_FILE, 'utf-8');
-      const credits = JSON.parse(data);
-      creditStore.clear();
-      Object.entries(credits).forEach(([token, creditData]) => {
-        creditStore.set(token, creditData);
-      });
-      console.log(`Loaded ${creditStore.size} credit records from file`);
-    }
+    const snapshot = await db.collection(COLLECTIONS.CREDITS).get();
+    creditStore.clear();
+    snapshot.forEach(doc => {
+      creditStore.set(doc.id, doc.data());
+    });
+    console.log(`✅ Loaded ${creditStore.size} credit records from Firestore`);
   } catch (error) {
-    console.error('Error loading credits:', error);
+    console.error('Error loading credits from Firestore:', error);
+    useFirestore = false; // Fallback to in-memory
   }
 };
 
-// Save credits to file
+// Save credits to Firestore
 const saveCredits = async () => {
+  if (!useFirestore) return;
   try {
-    await ensureDataDir();
-    const credits = Object.fromEntries(creditStore);
-    await writeFile(CREDITS_FILE, JSON.stringify(credits, null, 2), 'utf-8');
+    const batch = db.batch();
+    creditStore.forEach((data, token) => {
+      const ref = db.collection(COLLECTIONS.CREDITS).doc(token);
+      batch.set(ref, data);
+    });
+    await batch.commit();
   } catch (error) {
-    // Silently fail - use in-memory storage only
-    // This allows the app to work even if file system is read-only
+    console.error('Error saving credits to Firestore:', error);
+    // Continue with in-memory storage
   }
 };
 
-// Load credit codes from file
+// Save single credit to Firestore
+const saveCredit = async (token, data) => {
+  if (!useFirestore) return;
+  try {
+    await db.collection(COLLECTIONS.CREDITS).doc(token).set(data);
+  } catch (error) {
+    console.error('Error saving credit to Firestore:', error);
+  }
+};
+
+// Load credit codes from Firestore
 const loadCreditCodes = async () => {
+  if (!useFirestore) return;
   try {
-    if (existsSync(CREDIT_CODES_FILE)) {
-      const data = await readFile(CREDIT_CODES_FILE, 'utf-8');
-      const codes = JSON.parse(data);
-      creditCodes.clear();
-      Object.entries(codes).forEach(([code, codeData]) => {
-        creditCodes.set(code, codeData);
-      });
-      console.log(`Loaded ${creditCodes.size} credit codes from file`);
-    }
+    const snapshot = await db.collection(COLLECTIONS.CREDIT_CODES).get();
+    creditCodes.clear();
+    snapshot.forEach(doc => {
+      creditCodes.set(doc.id, doc.data());
+    });
+    console.log(`✅ Loaded ${creditCodes.size} credit codes from Firestore`);
   } catch (error) {
-    console.error('Error loading credit codes:', error);
+    console.error('Error loading credit codes from Firestore:', error);
+    useFirestore = false;
   }
 };
 
-// Save credit codes to file
+// Save credit codes to Firestore
 const saveCreditCodes = async () => {
+  if (!useFirestore) return;
   try {
-    await ensureDataDir();
-    const codes = Object.fromEntries(creditCodes);
-    await writeFile(CREDIT_CODES_FILE, JSON.stringify(codes, null, 2), 'utf-8');
+    const batch = db.batch();
+    creditCodes.forEach((data, code) => {
+      const ref = db.collection(COLLECTIONS.CREDIT_CODES).doc(code);
+      batch.set(ref, data);
+    });
+    await batch.commit();
   } catch (error) {
-    // Silently fail - use in-memory storage only
+    console.error('Error saving credit codes to Firestore:', error);
   }
 };
 
-// Load free trial claims from file
+// Save single credit code to Firestore
+const saveCreditCode = async (code, data) => {
+  if (!useFirestore) return;
+  try {
+    await db.collection(COLLECTIONS.CREDIT_CODES).doc(code).set(data);
+  } catch (error) {
+    console.error('Error saving credit code to Firestore:', error);
+  }
+};
+
+// Load free trial claims from Firestore
 const loadFreeTrialClaims = async () => {
+  if (!useFirestore) return;
   try {
-    if (existsSync(FREE_TRIAL_CLAIMS_FILE)) {
-      const data = await readFile(FREE_TRIAL_CLAIMS_FILE, 'utf-8');
-      const claims = JSON.parse(data);
-      freeTrialClaims.clear();
-      Object.entries(claims).forEach(([ip, claimData]) => {
-        freeTrialClaims.set(ip, claimData);
-      });
-      console.log(`Loaded ${freeTrialClaims.size} free trial claims from file`);
-    }
+    const snapshot = await db.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).get();
+    freeTrialClaims.clear();
+    snapshot.forEach(doc => {
+      freeTrialClaims.set(doc.id, doc.data());
+    });
+    console.log(`✅ Loaded ${freeTrialClaims.size} free trial claims from Firestore`);
   } catch (error) {
-    console.error('Error loading free trial claims:', error);
+    console.error('Error loading free trial claims from Firestore:', error);
+    useFirestore = false;
   }
 };
 
-// Save free trial claims to file
+// Save free trial claims to Firestore
 const saveFreeTrialClaims = async () => {
+  if (!useFirestore) return;
   try {
-    await ensureDataDir();
-    const claims = Object.fromEntries(freeTrialClaims);
-    await writeFile(FREE_TRIAL_CLAIMS_FILE, JSON.stringify(claims, null, 2), 'utf-8');
+    const batch = db.batch();
+    freeTrialClaims.forEach((data, ip) => {
+      const ref = db.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).doc(ip);
+      batch.set(ref, data);
+    });
+    await batch.commit();
   } catch (error) {
-    // Silently fail - use in-memory storage only
+    console.error('Error saving free trial claims to Firestore:', error);
+  }
+};
+
+// Save single free trial claim to Firestore
+const saveFreeTrialClaim = async (ip, data) => {
+  if (!useFirestore) return;
+  try {
+    await db.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).doc(ip).set(data);
+  } catch (error) {
+    console.error('Error saving free trial claim to Firestore:', error);
   }
 };
 
 // Initialize data on startup
 const initializeData = async () => {
   try {
-    await ensureDataDir();
-    await loadCredits();
-    await loadCreditCodes();
-    await loadFreeTrialClaims();
-    console.log('Data initialization completed successfully');
+    if (useFirestore) {
+      await loadCredits();
+      await loadCreditCodes();
+      await loadFreeTrialClaims();
+      console.log('✅ Data initialization from Firestore completed');
+    } else {
+      console.log('⚠️ Using in-memory storage only (Firestore not available)');
+    }
   } catch (error) {
-    // If we can't use file system, continue with in-memory storage only
-    console.warn('Warning: Could not initialize file-based storage:', error.message);
-    console.warn('Using in-memory storage only. Data will be lost on restart.');
-    // Don't throw - allow server to start anyway
+    console.warn('⚠️ Data initialization warning (non-fatal):', error.message);
+    useFirestore = false; // Fallback to in-memory
   }
 };
 
@@ -225,11 +257,12 @@ const getClientIp = (req) => {
 // Initialize or get credits for a token
 const getOrCreateCredits = async (token, initialBalance = 0) => {
   if (!creditStore.has(token)) {
-    creditStore.set(token, {
+    const creditData = {
       balance: initialBalance,
       createdAt: Date.now(),
-    });
-    await saveCredits();
+    };
+    creditStore.set(token, creditData);
+    await saveCredit(token, creditData);
   }
   return creditStore.get(token);
 };
@@ -256,15 +289,19 @@ app.post('/api/credits/request-free', async (req, res) => {
     }
 
     const token = generateToken('free');
-    creditStore.set(token, {
+    const creditData = {
       balance: INITIAL_FREE_CREDITS,
       createdAt: Date.now(),
       ip,
-    });
+    };
+    creditStore.set(token, creditData);
     freeTrialClaims.set(ip, { token, claimedAt: Date.now() });
 
-    // Save to file
-    await Promise.all([saveCredits(), saveFreeTrialClaims()]);
+    // Save to Firestore
+    await Promise.all([
+      saveCredit(token, creditData),
+      saveFreeTrialClaim(ip, { token, claimedAt: Date.now() })
+    ]);
 
     console.log(`Granted initial free credits to IP ${ip}, token ${token}`);
 
@@ -300,7 +337,7 @@ app.post('/api/credits/deduct', async (req, res) => {
 
     credits.balance -= amount;
     creditStore.set(token, credits);
-    await saveCredits();
+    await saveCredit(token, credits);
 
     console.log(`Deducted ${amount} credits for ${action}. New balance: ${credits.balance}`);
 
@@ -406,8 +443,11 @@ app.post('/api/credits/redeem-code', async (req, res) => {
       creditCodes.set(originalCodeKey, creditCode);
     }
 
-    // Save to file
-    await Promise.all([saveCredits(), saveCreditCodes()]);
+    // Save to Firestore
+    await Promise.all([
+      saveCredit(token, userCredits),
+      saveCreditCode(originalCodeKey, creditCode)
+    ]);
 
     console.log(`✅ Successfully redeemed code ${normalizedCode} for ${creditCode.credits} credits. Email: ${normalizedEmail}. Token: ${token}. New balance: ${userCredits.balance}`);
 
@@ -448,15 +488,16 @@ app.post('/api/admin/generate-code', (req, res) => {
       return res.status(400).json({ error: 'Code already exists' });
     }
     
-    creditCodes.set(creditCode, {
+    const codeData = {
       code: creditCode,
       credits: parseInt(credits, 10),
       email: email ? email.toLowerCase().trim() : null, // Store email if provided
       used: false,
       createdAt: Date.now(),
-    });
+    };
+    creditCodes.set(creditCode, codeData);
 
-    await saveCreditCodes();
+    await saveCreditCode(creditCode, codeData);
 
     console.log(`✅ Generated credit code: ${creditCode} for ${credits} credits${email ? ` (restricted to: ${email})` : ''}`);
     console.log(`Total codes in memory: ${creditCodes.size}`);
@@ -580,15 +621,16 @@ app.get('/api/admin/create-code', (req, res) => {
       `);
     }
     
-    creditCodes.set(creditCode, {
+    const codeData = {
       code: creditCode,
       credits: credits,
       email: email ? email.toLowerCase().trim() : null,
       used: false,
       createdAt: Date.now(),
-    });
+    };
+    creditCodes.set(creditCode, codeData);
 
-    await saveCreditCodes();
+    await saveCreditCode(creditCode, codeData);
 
     console.log(`✅ Generated credit code: ${creditCode} for ${credits} credits${email ? ` (restricted to: ${email})` : ''}`);
     console.log(`Total codes in memory: ${creditCodes.size}`);
@@ -743,7 +785,7 @@ app.get('*', (req, res) => {
     console.log('🚀 Starting server initialization...');
     console.log(`📌 PORT: ${PORT}`);
     console.log(`📁 __dirname: ${__dirname}`);
-    console.log(`💾 DATA_DIR: ${DATA_DIR}`);
+    console.log(`💾 Storage: ${useFirestore ? 'Firestore' : 'In-memory only'}`);
     
     // Initialize data (non-blocking - will continue even if it fails)
     initializeData().catch((err) => {
@@ -754,8 +796,7 @@ app.get('*', (req, res) => {
     const server = app.listen(PORT, '0.0.0.0', () => {
       console.log(`✅ Server successfully started on port ${PORT}`);
       console.log(`🔑 Gemini API Key configured: ${!!ai}`);
-      console.log(`💳 Credit system: File-based storage with in-memory fallback`);
-      console.log(`📂 Data directory: ${DATA_DIR}`);
+      console.log(`💳 Credit system: ${useFirestore ? 'Firestore with in-memory cache' : 'In-memory only (Firestore not available)'}`);
     });
     
     // Handle server errors
