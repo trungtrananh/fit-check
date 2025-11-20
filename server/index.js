@@ -17,7 +17,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Persistent storage paths
-const DATA_DIR = path.join(__dirname, 'data');
+// Use /tmp on Cloud Run (writable) or local data directory for development
+const DATA_DIR = process.env.NODE_ENV === 'production' 
+  ? '/tmp/fit-check-data' 
+  : path.join(__dirname, 'data');
 const CREDITS_FILE = path.join(DATA_DIR, 'credits.json');
 const CREDIT_CODES_FILE = path.join(DATA_DIR, 'creditCodes.json');
 const FREE_TRIAL_CLAIMS_FILE = path.join(DATA_DIR, 'freeTrialClaims.json');
@@ -34,9 +37,15 @@ const freeTrialClaims = new Map();
 
 // Ensure data directory exists
 const ensureDataDir = async () => {
-  if (!existsSync(DATA_DIR)) {
-    await mkdir(DATA_DIR, { recursive: true });
-    console.log('Created data directory:', DATA_DIR);
+  try {
+    if (!existsSync(DATA_DIR)) {
+      await mkdir(DATA_DIR, { recursive: true });
+      console.log('Created data directory:', DATA_DIR);
+    }
+  } catch (error) {
+    console.warn('Warning: Could not create data directory:', error.message);
+    console.warn('Falling back to in-memory storage only');
+    throw error; // Re-throw to indicate failure
   }
 };
 
@@ -64,7 +73,8 @@ const saveCredits = async () => {
     const credits = Object.fromEntries(creditStore);
     await writeFile(CREDITS_FILE, JSON.stringify(credits, null, 2), 'utf-8');
   } catch (error) {
-    console.error('Error saving credits:', error);
+    // Silently fail - use in-memory storage only
+    // This allows the app to work even if file system is read-only
   }
 };
 
@@ -92,7 +102,7 @@ const saveCreditCodes = async () => {
     const codes = Object.fromEntries(creditCodes);
     await writeFile(CREDIT_CODES_FILE, JSON.stringify(codes, null, 2), 'utf-8');
   } catch (error) {
-    console.error('Error saving credit codes:', error);
+    // Silently fail - use in-memory storage only
   }
 };
 
@@ -120,16 +130,24 @@ const saveFreeTrialClaims = async () => {
     const claims = Object.fromEntries(freeTrialClaims);
     await writeFile(FREE_TRIAL_CLAIMS_FILE, JSON.stringify(claims, null, 2), 'utf-8');
   } catch (error) {
-    console.error('Error saving free trial claims:', error);
+    // Silently fail - use in-memory storage only
   }
 };
 
 // Initialize data on startup
 const initializeData = async () => {
-  await ensureDataDir();
-  await loadCredits();
-  await loadCreditCodes();
-  await loadFreeTrialClaims();
+  try {
+    await ensureDataDir();
+    await loadCredits();
+    await loadCreditCodes();
+    await loadFreeTrialClaims();
+    console.log('Data initialization completed successfully');
+  } catch (error) {
+    // If we can't use file system, continue with in-memory storage only
+    console.warn('Warning: Could not initialize file-based storage:', error.message);
+    console.warn('Using in-memory storage only. Data will be lost on restart.');
+    // Don't throw - allow server to start anyway
+  }
 };
 
 // Middleware
@@ -730,7 +748,12 @@ initializeData().then(() => {
     console.log(`Data directory: ${DATA_DIR}`);
   });
 }).catch((error) => {
-  console.error('Failed to initialize data:', error);
-  process.exit(1);
+  // Even if data initialization fails, start the server
+  // This allows the app to work with in-memory storage only
+  console.error('Warning: Data initialization had issues, but starting server anyway:', error.message);
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server running on port ${PORT} (in-memory storage only)`);
+    console.log(`Gemini API Key configured: ${!!ai}`);
+  });
 });
 
