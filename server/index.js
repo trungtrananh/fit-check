@@ -18,13 +18,19 @@ const PORT = process.env.PORT || 3000;
 // Initialize Firestore (will use default credentials on Cloud Run)
 let db = null;
 let useFirestore = false;
+
+// Initialize Firestore synchronously (non-blocking, will test on first use)
 try {
-  db = new Firestore();
+  db = new Firestore({
+    // Use default credentials on Cloud Run
+    // This will work automatically on Cloud Run with default service account
+  });
   useFirestore = true;
-  console.log('✅ Firestore initialized successfully');
+  console.log('✅ Firestore instance created (will test connection on first use)');
 } catch (error) {
   console.warn('⚠️ Firestore initialization failed, using in-memory storage only:', error.message);
   useFirestore = false;
+  db = null;
 }
 
 // In-memory cache (synced with Firestore)
@@ -41,7 +47,7 @@ const COLLECTIONS = {
 
 // Load credits from Firestore
 const loadCredits = async () => {
-  if (!useFirestore) return;
+  if (!useFirestore || !db) return;
   try {
     const snapshot = await db.collection(COLLECTIONS.CREDITS).get();
     creditStore.clear();
@@ -57,7 +63,7 @@ const loadCredits = async () => {
 
 // Save credits to Firestore
 const saveCredits = async () => {
-  if (!useFirestore) return;
+  if (!useFirestore || !db) return;
   try {
     const batch = db.batch();
     creditStore.forEach((data, token) => {
@@ -73,7 +79,7 @@ const saveCredits = async () => {
 
 // Save single credit to Firestore
 const saveCredit = async (token, data) => {
-  if (!useFirestore) return;
+  if (!useFirestore || !db) return;
   try {
     await db.collection(COLLECTIONS.CREDITS).doc(token).set(data);
   } catch (error) {
@@ -83,7 +89,7 @@ const saveCredit = async (token, data) => {
 
 // Load credit codes from Firestore
 const loadCreditCodes = async () => {
-  if (!useFirestore) return;
+  if (!useFirestore || !db) return;
   try {
     const snapshot = await db.collection(COLLECTIONS.CREDIT_CODES).get();
     creditCodes.clear();
@@ -99,7 +105,7 @@ const loadCreditCodes = async () => {
 
 // Save credit codes to Firestore
 const saveCreditCodes = async () => {
-  if (!useFirestore) return;
+  if (!useFirestore || !db) return;
   try {
     const batch = db.batch();
     creditCodes.forEach((data, code) => {
@@ -114,7 +120,7 @@ const saveCreditCodes = async () => {
 
 // Save single credit code to Firestore
 const saveCreditCode = async (code, data) => {
-  if (!useFirestore) return;
+  if (!useFirestore || !db) return;
   try {
     await db.collection(COLLECTIONS.CREDIT_CODES).doc(code).set(data);
   } catch (error) {
@@ -124,7 +130,7 @@ const saveCreditCode = async (code, data) => {
 
 // Load free trial claims from Firestore
 const loadFreeTrialClaims = async () => {
-  if (!useFirestore) return;
+  if (!useFirestore || !db) return;
   try {
     const snapshot = await db.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).get();
     freeTrialClaims.clear();
@@ -140,7 +146,7 @@ const loadFreeTrialClaims = async () => {
 
 // Save free trial claims to Firestore
 const saveFreeTrialClaims = async () => {
-  if (!useFirestore) return;
+  if (!useFirestore || !db) return;
   try {
     const batch = db.batch();
     freeTrialClaims.forEach((data, ip) => {
@@ -155,7 +161,7 @@ const saveFreeTrialClaims = async () => {
 
 // Save single free trial claim to Firestore
 const saveFreeTrialClaim = async (ip, data) => {
-  if (!useFirestore) return;
+  if (!useFirestore || !db) return;
   try {
     await db.collection(COLLECTIONS.FREE_TRIAL_CLAIMS).doc(ip).set(data);
   } catch (error) {
